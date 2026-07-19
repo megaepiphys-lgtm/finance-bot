@@ -7,13 +7,24 @@ import re
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
+from flask import Flask
+import threading
 
-# ===== ТОКЕН ИЗ ПЕРЕМЕННОЙ ОКРУЖЕНИЯ =====
-TG_TOKEN = os.environ.get("TG_TOKEN")
-if not TG_TOKEN:
-    print("❌ Ошибка: не установлен TG_TOKEN")
-    exit()
+# ===== ЗАПУСК FLASK (для Render) =====
+app = Flask(__name__)
 
+@app.route('/')
+def home():
+    return "Бот работает!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=10000)
+
+# Запускаем Flask в фоновом потоке
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ===== ТОКЕН И АДМИН =====
+TG_TOKEN = "8740176633:AAEBOWf40ROLLybNTZBG-3fIcf4b4z2RJ_s"
 ADMIN_ID = 7461823442
 print("🚀 Запуск финансового помощника...")
 
@@ -56,10 +67,19 @@ def init_db():
         limit_amount REAL,
         PRIMARY KEY (user_id, category)
     )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS donations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        amount INTEGER,
+        date TEXT
+    )''')
     conn.commit()
     conn.close()
 
 init_db()
+
+# ===== ПЕРЕМЕННАЯ ТЕХОБСЛУЖИВАНИЯ =====
+maintenance_mode = False
 
 # ===== КАТЕГОРИИ =====
 CATEGORIES = {
@@ -128,6 +148,28 @@ def update_activity(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('UPDATE users SET last_activity = ? WHERE user_id = ?', (now, user_id))
+    conn.commit()
+    conn.close()
+
+def is_premium(user_id):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT premium_until FROM users WHERE user_id = ?', (user_id,))
+    result = c.fetchone()
+    conn.close()
+    if result and result[0]:
+        try:
+            until = datetime.strptime(result[0], "%Y-%m-%d")
+            return until >= datetime.now().date()
+        except:
+            return False
+    return False
+
+def activate_premium(user_id, days=30):
+    until = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('UPDATE users SET premium_until = ? WHERE user_id = ?', (until, user_id))
     conn.commit()
     conn.close()
 
@@ -257,8 +299,12 @@ def delete_all_data(user_id):
     conn.commit()
     conn.close()
 
-# ===== ЭКСПОРТ В EXCEL =====
+# ===== ВЫГРУЗКА В EXCEL =====
 def export_to_excel(chat_id):
+    if not is_premium(chat_id):
+        send_message(chat_id, "⭐ *Выгрузка в Excel доступна только Premium-пользователям.*\n\nНажмите «⭐ Premium» в меню, чтобы узнать подробности.", main_keyboard(chat_id))
+        return
+    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT date, type, category, amount, description FROM transactions WHERE user_id = ? ORDER BY date DESC', (chat_id,))
@@ -266,19 +312,17 @@ def export_to_excel(chat_id):
     conn.close()
     
     if not data:
-        send_message(chat_id, "📋 Нет операций для экспорта.", main_keyboard(chat_id))
+        send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
         return
     
     wb = Workbook()
     ws = wb.active
     ws.title = "Операции"
     
-    # Дата формирования отчёта
     ws.cell(row=1, column=1, value="Отчёт сформирован:")
     ws.cell(row=1, column=2, value=datetime.now().strftime("%d.%m.%Y %H:%M"))
     ws.cell(row=2, column=1, value="")
     
-    # Заголовки
     headers = ["Дата", "Тип", "Категория", "Сумма", "Описание"]
     for col_num, header in enumerate(headers, 1):
         ws.cell(row=3, column=col_num, value=header)
@@ -382,7 +426,8 @@ def main_keyboard(chat_id):
         ["💰 Баланс", "📊 Отчёт"],
         ["📝 Доход", "💸 Расход"],
         ["📈 Бюджет", "📋 История"],
-        ["📤 Экспорт в Excel", "❓ Инструкция пользователя"],
+        ["📤 Выгрузка в Excel", "❓ Инструкция пользователя"],
+        ["⭐ Premium", "☕ Поддержать"],
         ["🗑️ Сбросить всё"]
     ]
     if chat_id == ADMIN_ID:
@@ -497,7 +542,20 @@ def handle_help(chat_id):
         "Нажмите «📋 История» — бот покажет последние операции.\n"
         "Листайте с помощью кнопок «🔙 Назад» и «➡️ Дальше».\n\n"
         "🔹 *Как удалить все данные?*\n"
-        "Нажмите «🗑️ Сбросить всё» — бот запросит подтверждение."
+        "Нажмите «🗑️ Сбросить всё» — бот запросит подтверждение.\n\n"
+        "⭐ *Premium-функции:*\n"
+        "• 📤 Выгрузка в Excel — полный отчёт с итогами\n"
+        "• ♾️ Безлимит операций\n"
+        "• 📊 Расширенные отчёты\n\n"
+        "🎁 *Пробный период:*\n"
+        "7 дней бесплатно — попробуйте все Premium-функции без ограничений.\n\n"
+        "💳 *Стоимость Premium:*\n"
+        "50 Telegram Stars (≈ 50 российских рублей) за 30 дней.\n"
+        "Оплата происходит внутри Telegram — без карт и регистраций.\n\n"
+        "☕ *Поддержать проект:*\n"
+        "Вы можете поддержать разработку бота — кнопка «☕ Поддержать» в меню.\n"
+        "💡 *Как получить Premium?*\n"
+        "Нажмите кнопку «⭐ Premium» в главном меню и следуйте инструкциям."
     )
     send_message(chat_id, text3, main_keyboard(chat_id))
 
@@ -639,6 +697,59 @@ def handle_choose_month(chat_id):
     send_message(chat_id, text, months_keyboard(months))
     user_states[chat_id] = {"action": "choose_month"}
 
+def handle_premium(chat_id):
+    text = (
+        "⭐ *Premium-доступ*\n\n"
+        "📌 *Что даёт Premium:*\n"
+        "• 📤 Выгрузка в Excel — полный отчёт с итогами\n"
+        "• ♾️ Безлимит операций\n"
+        "• 📊 Расширенные отчёты\n\n"
+        "💳 *Стоимость:*\n"
+        "50 Telegram Stars (≈ 50 российских рублей) за 30 дней.\n"
+        "Оплата внутри Telegram — без карт.\n\n"
+        "🎁 *Пробный период:*\n"
+        "7 дней бесплатно — нажмите «Активировать пробный период».\n\n"
+        "❓ *Что такое Telegram Stars?*\n"
+        "Это внутренняя валюта Telegram. Купить Stars можно в настройках приложения.\n"
+    )
+    keyboard = {
+        "keyboard": [
+            ["🎁 Активировать пробный период"],
+            ["🔙 Назад"]
+        ],
+        "resize_keyboard": True
+    }
+    send_message(chat_id, text, keyboard)
+
+def handle_donate(chat_id):
+    text = (
+        "☕ *Поддержать проект*\n\n"
+        "Если вам нравится бот и он помогает вам вести учёт финансов,\n"
+        "вы можете поддержать его разработку!\n\n"
+        "💳 *Способы поддержки:*\n"
+        "• Telegram Stars (скоро)\n"
+        "• Перевод на карту (скоро)\n\n"
+        "🙏 Спасибо за вашу поддержку!\n"
+        "Это поможет сделать бота ещё лучше."
+    )
+    send_message(chat_id, text, main_keyboard(chat_id))
+
+def handle_maintenance(chat_id, command):
+    global maintenance_mode
+    if chat_id != ADMIN_ID:
+        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
+        return
+    
+    if "on" in command:
+        maintenance_mode = True
+        send_message(chat_id, "🔧 *Режим технического обслуживания ВКЛЮЧЁН.*\n\nПользователи будут видеть уведомление о технических работах.", main_keyboard(chat_id))
+    elif "off" in command:
+        maintenance_mode = False
+        send_message(chat_id, "✅ *Режим технического обслуживания ВЫКЛЮЧЁН.*\n\nБот снова работает в обычном режиме.", main_keyboard(chat_id))
+    else:
+        status = "включён" if maintenance_mode else "выключен"
+        send_message(chat_id, f"🔧 Режим техобслуживания: *{status}*.", main_keyboard(chat_id))
+
 print("✅ Бот готов! Жду сообщения...")
 print("=" * 50)
 
@@ -661,6 +772,12 @@ while True:
                 if not get_user(chat_id):
                     create_user(chat_id)
 
+                # ===== РЕЖИМ ТЕХОБСЛУЖИВАНИЯ =====
+                if maintenance_mode and chat_id != ADMIN_ID:
+                    send_message(chat_id, "🔧 *Технические работы*\n\nБот временно недоступен. Ведутся улучшения.\nПожалуйста, зайдите через 10–15 минут.\n\nПриносим извинения за неудобства!", main_keyboard(chat_id))
+                    offset = update["update_id"] + 1
+                    continue
+
                 state = user_states.get(chat_id)
 
                 # ============================================================
@@ -669,6 +786,11 @@ while True:
                 if text == "/start":
                     user_states.pop(chat_id, None)
                     handle_start(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
+                if text.startswith("/maintenance"):
+                    handle_maintenance(chat_id, text)
                     offset = update["update_id"] + 1
                     continue
 
@@ -683,9 +805,27 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                if text == "📤 Экспорт в Excel":
+                if text == "📤 Выгрузка в Excel":
                     user_states.pop(chat_id, None)
                     export_to_excel(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
+                if text == "⭐ Premium":
+                    user_states.pop(chat_id, None)
+                    handle_premium(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
+                if text == "☕ Поддержать":
+                    user_states.pop(chat_id, None)
+                    handle_donate(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
+                if text == "🎁 Активировать пробный период":
+                    activate_premium(chat_id, 7)
+                    send_message(chat_id, "🎁 *Пробный период Premium активирован!*\n\n7 дней бесплатного доступа.\nТеперь вам доступны все Premium-функции.", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
 
@@ -943,3 +1083,4 @@ while True:
     except Exception as e:
         print(f"⚠️ Ошибка: {e}")
         time.sleep(5)
+                                                ээ
