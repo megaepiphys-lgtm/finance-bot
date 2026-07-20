@@ -25,7 +25,7 @@ flask_thread = threading.Thread(target=run_flask, daemon=True)
 flask_thread.start()
 
 # ===== ТОКЕН И АДМИН =====
-TG_TOKEN = "8834776779:AAGJA_ewXIU6P-U0XqvKZFef7vswGckLC64"
+TG_TOKEN = os.environ.get("TG_TOKEN")
 ADMIN_ID = 7461823442
 print("🚀 Запуск финансового помощника...")
 
