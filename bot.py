@@ -20,12 +20,11 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
-# Запускаем Flask в отдельном потоке (не блокирует бота)
-flask_thread = threading.Thread(target=run_flask, daemon=True)
-flask_thread.start()
+# Запускаем Flask в отдельном потоке
+threading.Thread(target=run_flask, daemon=True).start()
 
 # ===== ТОКЕН И АДМИН =====
-TG_TOKEN = os.environ.get("TG_TOKEN")
+TG_TOKEN = "8834776779:AAGJA_ewXIU6P-U0XqvKZFef7vswGckLC64"
 ADMIN_ID = 7461823442
 print("🚀 Запуск финансового помощника...")
 
@@ -476,7 +475,6 @@ def send_message(chat_id, text, keyboard=None):
 # ===== ОБРАБОТЧИКИ =====
 def handle_start(chat_id):
     create_user(chat_id)
-    # Короткое приветствие
     text = (
         "💰 *Финансовый помощник*\n\n"
         "📌 Записывайте доходы и расходы.\n"
@@ -702,6 +700,9 @@ def handle_maintenance(chat_id, command):
         status = "включён" if maintenance_mode else "выключен"
         send_message(chat_id, f"🔧 Режим техобслуживания: *{status}*.", main_keyboard(chat_id))
 
+def handle_getid(chat_id):
+    send_message(chat_id, f"Chat ID: {chat_id}")
+
 print("✅ Бот готов! Жду сообщения...")
 print("=" * 50)
 
@@ -720,6 +721,7 @@ while True:
                 msg = update["message"]
                 chat_id = msg["chat"]["id"]
                 text = msg.get("text", "").strip()
+                is_group = msg.get("chat", {}).get("type") in ["group", "supergroup"]
 
                 if not get_user(chat_id):
                     create_user(chat_id)
@@ -743,6 +745,12 @@ while True:
 
                 if text.startswith("/maintenance"):
                     handle_maintenance(chat_id, text)
+                    offset = update["update_id"] + 1
+                    continue
+
+                # ===== КОМАНДА /getid (работает в группе) =====
+                if text == "/getid":
+                    handle_getid(chat_id)
                     offset = update["update_id"] + 1
                     continue
 
@@ -1015,6 +1023,11 @@ while True:
                 # ============================================================
                 # 3. НЕИЗВЕСТНАЯ КОМАНДА
                 # ============================================================
+                # Если сообщение из группы — бот НЕ ОТВЕЧАЕТ (кроме /getid)
+                if is_group:
+                    offset = update["update_id"] + 1
+                    continue
+
                 send_message(chat_id, "Используйте кнопки меню 👇", main_keyboard(chat_id))
                 offset = update["update_id"] + 1
 
@@ -1022,4 +1035,4 @@ while True:
 
     except Exception as e:
         print(f"⚠️ Ошибка: {e}")
-        time.sleep(5)                            
+        time.sleep(5)                                       
