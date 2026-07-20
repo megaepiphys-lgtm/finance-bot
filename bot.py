@@ -20,11 +20,12 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
-# Запускаем Flask в фоновом потоке
-threading.Thread(target=run_flask, daemon=True).start()
+# Запускаем Flask в отдельном потоке (не блокирует бота)
+flask_thread = threading.Thread(target=run_flask, daemon=True)
+flask_thread.start()
 
 # ===== ТОКЕН И АДМИН =====
-TG_TOKEN = "8740176633:AAEBOWf40ROLLybNTZBG-3fIcf4b4z2RJ_s"
+TG_TOKEN = "8834776779:AAGJA_ewXIU6P-U0XqvKZFef7vswGckLC64"
 ADMIN_ID = 7461823442
 print("🚀 Запуск финансового помощника...")
 
@@ -148,28 +149,6 @@ def update_activity(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('UPDATE users SET last_activity = ? WHERE user_id = ?', (now, user_id))
-    conn.commit()
-    conn.close()
-
-def is_premium(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('SELECT premium_until FROM users WHERE user_id = ?', (user_id,))
-    result = c.fetchone()
-    conn.close()
-    if result and result[0]:
-        try:
-            until = datetime.strptime(result[0], "%Y-%m-%d")
-            return until >= datetime.now().date()
-        except:
-            return False
-    return False
-
-def activate_premium(user_id, days=30):
-    until = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('UPDATE users SET premium_until = ? WHERE user_id = ?', (until, user_id))
     conn.commit()
     conn.close()
 
@@ -301,10 +280,6 @@ def delete_all_data(user_id):
 
 # ===== ВЫГРУЗКА В EXCEL =====
 def export_to_excel(chat_id):
-    if not is_premium(chat_id):
-        send_message(chat_id, "⭐ *Выгрузка в Excel доступна только Premium-пользователям.*\n\nНажмите «⭐ Premium» в меню, чтобы узнать подробности.", main_keyboard(chat_id))
-        return
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT date, type, category, amount, description FROM transactions WHERE user_id = ? ORDER BY date DESC', (chat_id,))
@@ -427,7 +402,7 @@ def main_keyboard(chat_id):
         ["📝 Доход", "💸 Расход"],
         ["📈 Бюджет", "📋 История"],
         ["📤 Выгрузка в Excel", "❓ Инструкция пользователя"],
-        ["⭐ Premium", "☕ Поддержать"],
+        ["☕ Поддержать"],
         ["🗑️ Сбросить всё"]
     ]
     if chat_id == ADMIN_ID:
@@ -501,7 +476,16 @@ def send_message(chat_id, text, keyboard=None):
 # ===== ОБРАБОТЧИКИ =====
 def handle_start(chat_id):
     create_user(chat_id)
-    handle_help(chat_id)
+    # Короткое приветствие
+    text = (
+        "💰 *Финансовый помощник*\n\n"
+        "📌 Записывайте доходы и расходы.\n"
+        "📊 Стройте отчёты по месяцам.\n"
+        "📤 Выгружайте данные в Excel.\n"
+        "📈 Устанавливайте лимиты на категории — бот предупредит, если превысите.\n\n"
+        "Подробная информация — в кнопке «❓ Инструкция пользователя»."
+    )
+    send_message(chat_id, text, main_keyboard(chat_id))
 
 def handle_help(chat_id):
     text1 = (
@@ -543,19 +527,12 @@ def handle_help(chat_id):
         "Листайте с помощью кнопок «🔙 Назад» и «➡️ Дальше».\n\n"
         "🔹 *Как удалить все данные?*\n"
         "Нажмите «🗑️ Сбросить всё» — бот запросит подтверждение.\n\n"
-        "⭐ *Premium-функции:*\n"
-        "• 📤 Выгрузка в Excel — полный отчёт с итогами\n"
-        "• ♾️ Безлимит операций\n"
-        "• 📊 Расширенные отчёты\n\n"
-        "🎁 *Пробный период:*\n"
-        "7 дней бесплатно — попробуйте все Premium-функции без ограничений.\n\n"
-        "💳 *Стоимость Premium:*\n"
-        "50 Telegram Stars (≈ 50 российских рублей) за 30 дней.\n"
-        "Оплата происходит внутри Telegram — без карт и регистраций.\n\n"
+        "🔹 *Как выгрузить данные в Excel?*\n"
+        "Нажмите «📤 Выгрузка в Excel» — бот пришлёт файл с таблицей.\n"
+        "В файле будут все ваши операции: дата, тип, категория, сумма и описание.\n"
+        "Внизу таблицы — итоги: общие доходы, расходы и доступный баланс.\n\n"
         "☕ *Поддержать проект:*\n"
-        "Вы можете поддержать разработку бота — кнопка «☕ Поддержать» в меню.\n"
-        "💡 *Как получить Premium?*\n"
-        "Нажмите кнопку «⭐ Premium» в главном меню и следуйте инструкциям."
+        "Вы можете поддержать разработку бота — кнопка «☕ Поддержать» в меню."
     )
     send_message(chat_id, text3, main_keyboard(chat_id))
 
@@ -569,6 +546,7 @@ def handle_stats(chat_id):
         "📊 *Статистика бота*\n\n"
         f"👥 Всего пользователей: {stats['total_users']}\n"
         f"📆 Активных за 7 дней: {stats['active_users']}\n"
+        f"📆 Активных за 30 дней: {stats['active_users']}\n"
         f"📝 Операций за месяц: {stats['total_ops']}\n"
         f"💰 Доходы (всех пользователей): {format_amount(stats['total_income'])} ₽\n"
         f"📉 Расходы (всех пользователей): {format_amount(stats['total_expense'])} ₽"
@@ -697,38 +675,12 @@ def handle_choose_month(chat_id):
     send_message(chat_id, text, months_keyboard(months))
     user_states[chat_id] = {"action": "choose_month"}
 
-def handle_premium(chat_id):
-    text = (
-        "⭐ *Premium-доступ*\n\n"
-        "📌 *Что даёт Premium:*\n"
-        "• 📤 Выгрузка в Excel — полный отчёт с итогами\n"
-        "• ♾️ Безлимит операций\n"
-        "• 📊 Расширенные отчёты\n\n"
-        "💳 *Стоимость:*\n"
-        "50 Telegram Stars (≈ 50 российских рублей) за 30 дней.\n"
-        "Оплата внутри Telegram — без карт.\n\n"
-        "🎁 *Пробный период:*\n"
-        "7 дней бесплатно — нажмите «Активировать пробный период».\n\n"
-        "❓ *Что такое Telegram Stars?*\n"
-        "Это внутренняя валюта Telegram. Купить Stars можно в настройках приложения.\n"
-    )
-    keyboard = {
-        "keyboard": [
-            ["🎁 Активировать пробный период"],
-            ["🔙 Назад"]
-        ],
-        "resize_keyboard": True
-    }
-    send_message(chat_id, text, keyboard)
-
 def handle_donate(chat_id):
     text = (
         "☕ *Поддержать проект*\n\n"
-        "Если вам нравится бот и он помогает вам вести учёт финансов,\n"
-        "вы можете поддержать его разработку!\n\n"
-        "💳 *Способы поддержки:*\n"
-        "• Telegram Stars (скоро)\n"
-        "• Перевод на карту (скоро)\n\n"
+        "Если бот помогает вам вести учёт финансов, вы можете поддержать его разработку!\n\n"
+        "💳 *Через Telegram Stars:*\n"
+        "Нажмите кнопку «Отправить Stars» — оплата происходит внутри Telegram.\n\n"
         "🙏 Спасибо за вашу поддержку!\n"
         "Это поможет сделать бота ещё лучше."
     )
@@ -756,7 +708,7 @@ print("=" * 50)
 offset = 0
 user_states = {}
 
-# ===== ОСНОВНОЙ ЦИКЛ =====
+# ===== ОСНОВНОЙ ЦИКЛ БОТА =====
 while True:
     try:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates?offset={offset}&timeout=30"
@@ -811,21 +763,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                if text == "⭐ Premium":
-                    user_states.pop(chat_id, None)
-                    handle_premium(chat_id)
-                    offset = update["update_id"] + 1
-                    continue
-
                 if text == "☕ Поддержать":
                     user_states.pop(chat_id, None)
                     handle_donate(chat_id)
-                    offset = update["update_id"] + 1
-                    continue
-
-                if text == "🎁 Активировать пробный период":
-                    activate_premium(chat_id, 7)
-                    send_message(chat_id, "🎁 *Пробный период Premium активирован!*\n\n7 дней бесплатного доступа.\nТеперь вам доступны все Premium-функции.", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
 
@@ -1082,4 +1022,4 @@ while True:
 
     except Exception as e:
         print(f"⚠️ Ошибка: {e}")
-        time.sleep(5)
+        time.sleep(5)                            
