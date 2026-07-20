@@ -20,12 +20,17 @@ def home():
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
-# Запускаем Flask в отдельном потоке
 threading.Thread(target=run_flask, daemon=True).start()
 
 # ===== ТОКЕН И АДМИН =====
 TG_TOKEN = os.environ.get("TG_TOKEN")
 ADMIN_ID = 7461823442
+REVIEW_GROUP_ID = -1004397763875  # Твоя группа для отзывов
+
+if not TG_TOKEN:
+    print("❌ Ошибка: не установлен TG_TOKEN")
+    exit()
+
 print("🚀 Запуск финансового помощника...")
 
 # ===== ПРОВЕРКА TELEGRAM =====
@@ -401,7 +406,7 @@ def main_keyboard(chat_id):
         ["📝 Доход", "💸 Расход"],
         ["📈 Бюджет", "📋 История"],
         ["📤 Выгрузка в Excel", "❓ Инструкция пользователя"],
-        ["☕ Поддержать"],
+        ["☕ Поддержать", "💬 Отзыв"],
         ["🗑️ Сбросить всё"]
     ]
     if chat_id == ADMIN_ID:
@@ -530,7 +535,10 @@ def handle_help(chat_id):
         "В файле будут все ваши операции: дата, тип, категория, сумма и описание.\n"
         "Внизу таблицы — итоги: общие доходы, расходы и доступный баланс.\n\n"
         "☕ *Поддержать проект:*\n"
-        "Вы можете поддержать разработку бота — кнопка «☕ Поддержать» в меню."
+        "Вы можете поддержать разработку бота — кнопка «☕ Поддержать» в меню.\n\n"
+        "💬 *Оставить отзыв:*\n"
+        "Нажмите «💬 Отзыв» и напишите своё мнение о боте.\n"
+        "Это поможет сделать его лучше!"
     )
     send_message(chat_id, text3, main_keyboard(chat_id))
 
@@ -684,6 +692,17 @@ def handle_donate(chat_id):
     )
     send_message(chat_id, text, main_keyboard(chat_id))
 
+def handle_review(chat_id):
+    text = (
+        "💬 *Оставить отзыв*\n\n"
+        "Напишите ваше мнение о боте: что нравится, что можно улучшить, какие функции добавить.\n\n"
+        "Просто отправьте текст одним сообщением.\n\n"
+        "📌 Отзыв будет отправлен разработчику.\n"
+        "Спасибо за вашу обратную связь! 🙏"
+    )
+    send_message(chat_id, text, back_keyboard())
+    user_states[chat_id] = {"action": "review"}
+
 def handle_maintenance(chat_id, command):
     global maintenance_mode
     if chat_id != ADMIN_ID:
@@ -748,7 +767,6 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ===== КОМАНДА /getid (работает в группе) =====
                 if text == "/getid":
                     handle_getid(chat_id)
                     offset = update["update_id"] + 1
@@ -774,6 +792,12 @@ while True:
                 if text == "☕ Поддержать":
                     user_states.pop(chat_id, None)
                     handle_donate(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
+                if text == "💬 Отзыв":
+                    user_states.pop(chat_id, None)
+                    handle_review(chat_id)
                     offset = update["update_id"] + 1
                     continue
 
@@ -1021,9 +1045,28 @@ while True:
                     continue
 
                 # ============================================================
-                # 3. НЕИЗВЕСТНАЯ КОМАНДА
+                # 3. ОТЗЫВЫ
                 # ============================================================
-                # Если сообщение из группы — бот НЕ ОТВЕЧАЕТ (кроме /getid)
+                if state and state.get("action") == "review":
+                    # Пересылаем отзыв в группу
+                    user_name = msg.get("from", {}).get("first_name", "Пользователь")
+                    username = msg.get("from", {}).get("username", "")
+                    user_link = f"@{username}" if username else f"[{user_name}](tg://user?id={chat_id})"
+                    
+                    review_text = (
+                        f"💬 *Новый отзыв*\n\n"
+                        f"👤 От: {user_link}\n"
+                        f"📝 Текст:\n{text}"
+                    )
+                    send_message(REVIEW_GROUP_ID, review_text)
+                    send_message(chat_id, "✅ Спасибо за ваш отзыв! Он отправлен разработчику. 🙏", main_keyboard(chat_id))
+                    user_states.pop(chat_id, None)
+                    offset = update["update_id"] + 1
+                    continue
+
+                # ============================================================
+                # 4. НЕИЗВЕСТНАЯ КОМАНДА
+                # ============================================================
                 if is_group:
                     offset = update["update_id"] + 1
                     continue
@@ -1035,4 +1078,4 @@ while True:
 
     except Exception as e:
         print(f"⚠️ Ошибка: {e}")
-        time.sleep(5)                                       
+        time.sleep(5)
