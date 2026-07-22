@@ -25,7 +25,7 @@ threading.Thread(target=run_flask, daemon=True).start()
 # ===== ТОКЕН И АДМИН =====
 TG_TOKEN = os.environ.get("TG_TOKEN")
 ADMIN_ID = 7461823442
-REVIEW_GROUP_ID = -1004397763875  # Твоя группа для отзывов и уведомлений
+REVIEW_GROUP_ID = -1004397763875
 
 if not TG_TOKEN:
     print("❌ Ошибка: не установлен TG_TOKEN")
@@ -316,7 +316,6 @@ def export_to_excel(chat_id):
     default_sheet = wb.active
     wb.remove(default_sheet)
     
-    # Получаем список месяцев, за которые есть операции
     months = {}
     for row in data:
         try:
@@ -333,11 +332,9 @@ def export_to_excel(chat_id):
         return
     
     for month_key, month_data in months.items():
-        # Создаём лист для месяца
         month_name = datetime.strptime(month_key, "%Y-%m").strftime("%B %Y")
         ws = wb.create_sheet(title=month_name)
         
-        # Заголовки
         headers = ["Дата", "Тип", "Категория", "Сумма", "Описание"]
         for col_num, header in enumerate(headers, 1):
             ws.cell(row=1, column=col_num, value=header)
@@ -368,7 +365,6 @@ def export_to_excel(chat_id):
             
             row_num += 1
         
-        # Итоги
         bold_font = Font(bold=True)
         row_num += 1
         
@@ -387,7 +383,6 @@ def export_to_excel(chat_id):
         ws.cell(row=row_num, column=4, value=f"{balance:,.0f} р.".replace(",", " "))
         ws.cell(row=row_num, column=3).font = bold_font
         
-        # Автоширина
         for col in ws.columns:
             max_length = 0
             col_letter = col[0].column_letter
@@ -396,7 +391,7 @@ def export_to_excel(chat_id):
                     max_length = max(max_length, len(str(cell.value)))
             ws.column_dimensions[col_letter].width = max_length + 2
     
-    filename = f"отчёт_{datetime.now().strftime('%B_%Y')}.xlsx"
+    filename = f"отчёт_{datetime.now().strftime('%B %Y')}.xlsx"
     wb.save(filename)
     
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
@@ -808,19 +803,15 @@ def handle_pre_checkout_query(pre_checkout_query):
 def handle_successful_payment(chat_id, payment_info):
     try:
         total, count = get_total_donations()
-        
-        # Сохраняем донат в базу
         amount = payment_info.get("total_amount", 0) // 100
         add_donation(chat_id, amount)
         
-        # Благодарим пользователя
         thank_text = (
             "🙏 *Спасибо за чаевые!*\n\n"
             "Вы помогаете развивать бота и делать его лучше ❤️"
         )
         send_message(chat_id, thank_text, main_keyboard(chat_id))
         
-        # Уведомление в группу
         user_name = chat_id
         try:
             url = f"https://api.telegram.org/bot{TG_TOKEN}/getChat"
@@ -869,7 +860,6 @@ while True:
                 if not get_user(chat_id):
                     create_user(chat_id)
 
-                # ===== РЕЖИМ ТЕХОБСЛУЖИВАНИЯ =====
                 if maintenance_mode and chat_id != ADMIN_ID:
                     send_message(chat_id, "🔧 *Технические работы*\n\nБот временно недоступен. Ведутся улучшения.\nПожалуйста, зайдите через 10–15 минут.\n\nПриносим извинения за неудобства!", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
@@ -877,9 +867,7 @@ while True:
 
                 state = user_states.get(chat_id)
 
-                # ============================================================
-                # 1. ОБРАБОТКА КОМАНД
-                # ============================================================
+                # ===== ОБРАБОТКА КОМАНД =====
                 if text == "/start":
                     user_states.pop(chat_id, None)
                     handle_start(chat_id)
@@ -1036,17 +1024,13 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 2. ДОНАТЫ
-                # ============================================================
+                # ===== ДОНАТЫ =====
                 if state and state.get("action") == "donate_amount":
                     try:
                         amount = int(text)
                         if amount < 1:
                             send_message(chat_id, "❌ Сумма должна быть больше 0.", back_keyboard())
                             continue
-                        
-                        # Создаём инвойс
                         invoice = send_invoice(chat_id, amount)
                         if invoice and invoice.get("ok"):
                             user_states.pop(chat_id, None)
@@ -1058,9 +1042,7 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 3. ОТЗЫВЫ
-                # ============================================================
+                # ===== ОТЗЫВЫ =====
                 if state and state.get("action") == "review":
                     user_name = msg.get("from", {}).get("first_name", "Пользователь")
                     username = msg.get("from", {}).get("username", "")
@@ -1077,18 +1059,14 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 4. ОБРАБОТКА ПЛАТЕЖЕЙ
-                # ============================================================
+                # ===== ПЛАТЕЖИ =====
                 if "successful_payment" in msg:
                     payment_info = msg["successful_payment"]
                     handle_successful_payment(chat_id, payment_info)
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 5. НЕИЗВЕСТНАЯ КОМАНДА
-                # ============================================================
+                # ===== НЕИЗВЕСТНАЯ КОМАНДА =====
                 if is_group:
                     offset = update["update_id"] + 1
                     continue
@@ -1096,9 +1074,7 @@ while True:
                 send_message(chat_id, "Используйте кнопки меню 👇", main_keyboard(chat_id))
                 offset = update["update_id"] + 1
 
-        # ============================================================
-        # 6. ОБРАБОТКА PRE-CHECKOUT
-        # ============================================================
+        # ===== PRE-CHECKOUT =====
         if "pre_checkout_query" in update:
             handle_pre_checkout_query(update["pre_checkout_query"])
             offset = update["update_id"] + 1
