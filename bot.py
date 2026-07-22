@@ -1089,7 +1089,7 @@ while True:
                         user_states.pop(chat_id, None)
                         send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
                     else:
-                        send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму.", category_keyboard("income"))
+                        send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму👇.", category_keyboard("income"))
                     offset = update["update_id"] + 1
                     continue
 
@@ -1122,7 +1122,7 @@ while True:
                         user_states.pop(chat_id, None)
                         send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
                     else:
-                        send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму.", category_keyboard("expense"))
+                        send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму👇.", category_keyboard("expense"))
                     offset = update["update_id"] + 1
                     continue
 
@@ -1181,7 +1181,7 @@ while True:
                         user_states.pop(chat_id, None)
                         send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
                     else:
-                        send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму.", two_column_keyboard(list(CATEGORIES["expense"].keys())))
+                        send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму👇.", two_column_keyboard(list(CATEGORIES["expense"].keys())))
                     offset = update["update_id"] + 1
                     continue
 
