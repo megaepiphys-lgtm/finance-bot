@@ -735,10 +735,10 @@ def handle_donate(chat_id):
         "💳 *Через Telegram Stars:*\n"
         "Просто напишите сумму в Stars (например, 10, 25, 50 или любую другую).\n\n"
         "💡 *Важно:* сумма в платёжной форме отображается так:\n"
-        "• 10 Stars → 1,000\n"
-        "• 25 Stars → 2,500\n"
-        "• 50 Stars → 5,000\n"
-        "• 100 Stars → 10,000\n"
+        "• 10 Stars → ★ 1,000\n"
+        "• 25 Stars → ★ 2,500\n"
+        "• 50 Stars → ★ 5,000\n"
+        "• 100 Stars → ★ 10,000\n"
         "Вы платите именно ту сумму, которую ввели.\n\n"
         "🌟 *Если покупка Stars через бота недоступна:*\n"
         "Telegram → Настройки → «Звёзды» → Пополнить.\n\n"
@@ -747,7 +747,6 @@ def handle_donate(chat_id):
     )
     send_message(chat_id, text, back_keyboard())
     user_states[chat_id] = {"action": "donate_amount"}
-
 def handle_review(chat_id):
     text = (
         "💬 *Оставить отзыв*\n\n"
