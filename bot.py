@@ -867,7 +867,9 @@ while True:
 
                 state = user_states.get(chat_id)
 
-                # ===== ОБРАБОТКА КОМАНД =====
+                # ============================================================
+                # 1. ОБРАБОТКА КОМАНД
+                # ============================================================
                 if text == "/start":
                     user_states.pop(chat_id, None)
                     handle_start(chat_id)
@@ -969,24 +971,36 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
+                # ============================================================
+                # 2. ДОХОД (устанавливаем состояние)
+                # ============================================================
                 if text == "📝 Доход":
                     user_states[chat_id] = {"action": "income_select"}
-                    send_message(chat_id, "📝 Выберите категорию доходов, либо нажмите 🔙 для выхода в главное меню", category_keyboard("income"))
+                    send_message(chat_id, "📝 *Выберите категорию доходов, либо нажмите 🔙 для выхода в главное меню*", category_keyboard("income"))
                     offset = update["update_id"] + 1
                     continue
 
+                # ============================================================
+                # 3. РАСХОД (устанавливаем состояние)
+                # ============================================================
                 if text == "💸 Расход":
                     user_states[chat_id] = {"action": "expense_select"}
-                    send_message(chat_id, "💸 Выберите категорию расходов, либо нажмите 🔙 для выхода в главное меню", category_keyboard("expense"))
+                    send_message(chat_id, "💸 *Выберите категорию расходов, либо нажмите 🔙 для выхода в главное меню*", category_keyboard("expense"))
                     offset = update["update_id"] + 1
                     continue
 
+                # ============================================================
+                # 4. БЮДЖЕТ (устанавливаем состояние)
+                # ============================================================
                 if text == "📈 Бюджет":
                     user_states[chat_id] = {"action": "budget_select"}
                     handle_budget(chat_id)
                     offset = update["update_id"] + 1
                     continue
 
+                # ============================================================
+                # 5. СБРОСИТЬ ВСЁ
+                # ============================================================
                 if text == "🗑️ Сбросить всё":
                     user_states[chat_id] = {"action": "confirm_delete"}
                     send_message(
@@ -1024,7 +1038,147 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ===== ДОНАТЫ =====
+                # ============================================================
+                # 6. ОБРАБОТКА СОСТОЯНИЙ
+                # ============================================================
+
+                # --- ВЫБОР КАТЕГОРИИ ДОХОДА ---
+                if state and state.get("action") == "income_select":
+                    if text in CATEGORIES["income"]:
+                        state["category"] = text
+                        state["action"] = "income_amount"
+                        example = CATEGORIES["income"][text]
+                        send_message(chat_id, f"💰 Введите сумму и описание для *{text}*\nНапример: *15000 {example}*", back_keyboard())
+                    elif text == "🔙 Назад":
+                        user_states.pop(chat_id, None)
+                        send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
+                    else:
+                        send_message(chat_id, "❌ Выберите категорию из списка.", category_keyboard("income"))
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ВВОД СУММЫ ДОХОДА ---
+                if state and state.get("action") == "income_amount":
+                    amount, description = extract_amount_and_desc(text)
+                    if amount is not None:
+                        add_transaction(chat_id, "income", state["category"], amount, description or "")
+                        desc_text = f" ({description})" if description else ""
+                        send_message(chat_id, f"✅ Доход записан!\n{state['category']}: {format_amount(amount)} р.{desc_text}", main_keyboard(chat_id))
+                        user_states.pop(chat_id, None)
+                    else:
+                        example = CATEGORIES["income"].get(state["category"], "сумма")
+                        send_message(chat_id, f"❌ Введите число и описание.\nНапример: *15000 {example}*", back_keyboard())
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ВЫБОР КАТЕГОРИИ РАСХОДА ---
+                if state and state.get("action") == "expense_select":
+                    if text in CATEGORIES["expense"]:
+                        state["category"] = text
+                        state["action"] = "expense_amount"
+                        example = CATEGORIES["expense"][text]
+                        send_message(chat_id, f"💸 Введите сумму и описание для *{text}*\nНапример: *500 {example}*", back_keyboard())
+                    elif text == "🔙 Назад":
+                        user_states.pop(chat_id, None)
+                        send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
+                    else:
+                        send_message(chat_id, "❌ Выберите категорию из списка.", category_keyboard("expense"))
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ВВОД СУММЫ РАСХОДА ---
+                if state and state.get("action") == "expense_amount":
+                    amount, description = extract_amount_and_desc(text)
+                    if amount is not None:
+                        add_transaction(chat_id, "expense", state["category"], amount, description or "")
+                        budget = get_budget(chat_id, state["category"])
+                        if budget:
+                            spent = get_monthly_expense(chat_id, state["category"])
+                            if spent > budget:
+                                send_message(
+                                    chat_id,
+                                    f"⚠️ *Превышен бюджет на «{state['category']}»!*\n"
+                                    f"📉 Лимит: {format_amount(budget)} р.\n"
+                                    f"📈 Потрачено: {format_amount(spent)} р.\n"
+                                    f"🔥 Перерасход: {format_amount(spent - budget)} р.",
+                                    main_keyboard(chat_id)
+                                )
+                        desc_text = f" ({description})" if description else ""
+                        send_message(chat_id, f"✅ Расход записан!\n{state['category']}: {format_amount(amount)} р.{desc_text}", main_keyboard(chat_id))
+                        user_states.pop(chat_id, None)
+                    else:
+                        example = CATEGORIES["expense"].get(state["category"], "сумма")
+                        send_message(chat_id, f"❌ Введите число и описание.\nНапример: *500 {example}*", back_keyboard())
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ВЫБОР КАТЕГОРИИ ДЛЯ БЮДЖЕТА ---
+                if state and state.get("action") == "budget_select":
+                    if text in CATEGORIES["expense"]:
+                        state["category"] = text
+                        current_limit = get_budget(chat_id, text)
+                        if current_limit is not None:
+                            msg = (
+                                f"📈 *Бюджет для категории «{text}»*\n\n"
+                                f"Текущий лимит: {format_amount(current_limit)} р.\n\n"
+                                f"Введите новый лимит (или нажмите «🗑️ Удалить лимит»):"
+                            )
+                            send_message(chat_id, msg, budget_keyboard_with_delete())
+                            state["action"] = "budget_amount"
+                        else:
+                            msg = (
+                                f"📈 *Бюджет для категории «{text}»*\n\n"
+                                f"Лимит не установлен.\n\n"
+                                f"Введите сумму лимита (или нажмите «🔙 Назад»):"
+                            )
+                            send_message(chat_id, msg, back_keyboard())
+                            state["action"] = "budget_amount"
+                    elif text == "🔙 Назад":
+                        user_states.pop(chat_id, None)
+                        send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
+                    else:
+                        send_message(chat_id, "❌ Выберите категорию из списка.", two_column_keyboard(list(CATEGORIES["expense"].keys())))
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ВВОД БЮДЖЕТА ---
+                if state and state.get("action") == "budget_amount":
+                    if text == "🗑️ Удалить лимит":
+                        delete_budget(chat_id, state["category"])
+                        send_message(chat_id, f"🗑️ Лимит для категории *{state['category']}* удалён.", main_keyboard(chat_id))
+                        user_states.pop(chat_id, None)
+                    elif text == "🔙 Назад":
+                        user_states.pop(chat_id, None)
+                        send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
+                    else:
+                        try:
+                            amount = float(text.replace(",", "."))
+                            set_budget(chat_id, state["category"], amount)
+                            send_message(chat_id, f"✅ Бюджет для *{state['category']}*: {format_amount(amount)} р.", main_keyboard(chat_id))
+                            user_states.pop(chat_id, None)
+                        except ValueError:
+                            send_message(chat_id, "❌ Введите число!", back_keyboard())
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ВЫБОР МЕСЯЦА ---
+                if state and state.get("action") == "choose_month":
+                    if text.startswith("📆 "):
+                        month_str = text.replace("📆 ", "")
+                        try:
+                            month_name, year_str = month_str.rsplit(" ", 1)
+                            year = int(year_str)
+                            month_num = datetime.strptime(month_name, "%B").month
+                            handle_report_by_month(chat_id, year, month_num)
+                            user_states.pop(chat_id, None)
+                        except:
+                            send_message(chat_id, "❌ Ошибка при выборе месяца.", main_keyboard(chat_id))
+                    else:
+                        send_message(chat_id, "❌ Выберите месяц из списка.", main_keyboard(chat_id))
+                    offset = update["update_id"] + 1
+                    continue
+
+                # --- ДОНАТЫ ---
                 if state and state.get("action") == "donate_amount":
                     try:
                         amount = int(text)
@@ -1042,7 +1196,7 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ===== ОТЗЫВЫ =====
+                # --- ОТЗЫВЫ ---
                 if state and state.get("action") == "review":
                     user_name = msg.get("from", {}).get("first_name", "Пользователь")
                     username = msg.get("from", {}).get("username", "")
@@ -1059,22 +1213,26 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ===== ПЛАТЕЖИ =====
+                # --- ПЛАТЕЖИ ---
                 if "successful_payment" in msg:
                     payment_info = msg["successful_payment"]
                     handle_successful_payment(chat_id, payment_info)
                     offset = update["update_id"] + 1
                     continue
 
-                # ===== НЕИЗВЕСТНАЯ КОМАНДА =====
+                # ============================================================
+                # 7. НЕИЗВЕСТНАЯ КОМАНДА
+                # ============================================================
                 if is_group:
                     offset = update["update_id"] + 1
                     continue
 
-                send_message(chat_id, "Используйте кнопки меню 👇", main_keyboard(chat_id))
+                send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
                 offset = update["update_id"] + 1
 
-        # ===== PRE-CHECKOUT =====
+        # ============================================================
+        # 8. PRE-CHECKOUT
+        # ============================================================
         if "pre_checkout_query" in update:
             handle_pre_checkout_query(update["pre_checkout_query"])
             offset = update["update_id"] + 1
