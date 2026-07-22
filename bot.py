@@ -778,6 +778,39 @@ def handle_maintenance(chat_id, command):
 def handle_getid(chat_id):
     send_message(chat_id, f"Chat ID: {chat_id}")
 
+# ===== БЭКАП И ВОССТАНОВЛЕНИЕ =====
+def handle_backup(chat_id):
+    if chat_id != ADMIN_ID:
+        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
+        return
+    
+    if not os.path.exists(DB_PATH):
+        send_message(chat_id, "📂 База данных не найдена.", main_keyboard(chat_id))
+        return
+    
+    try:
+        send_message(chat_id, "⏳ Создаю резервную копию...", main_keyboard(chat_id))
+        filename = f"backup_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.db"
+        os.rename(DB_PATH, filename)
+        
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
+        files = {'document': open(filename, 'rb')}
+        data = {'chat_id': chat_id}
+        requests.post(url, files=files, data=data)
+        
+        os.rename(filename, DB_PATH)
+        send_message(chat_id, "✅ Бэкап создан и отправлен!", main_keyboard(chat_id))
+    except Exception as e:
+        send_message(chat_id, f"❌ Ошибка при создании бэкапа: {e}", main_keyboard(chat_id))
+
+def handle_restore(chat_id):
+    if chat_id != ADMIN_ID:
+        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
+        return
+    
+    send_message(chat_id, "📤 Отправьте файл с бэкапом (файл должен быть в формате .db)", back_keyboard())
+    user_states[chat_id] = {"action": "restore"}
+
 def send_invoice(chat_id, amount):
     try:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/sendInvoice"
@@ -899,6 +932,16 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
+                if text == "/backup":
+                    handle_backup(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
+                if text == "/restore":
+                    handle_restore(chat_id)
+                    offset = update["update_id"] + 1
+                    continue
+
                 if text == "/help" or text == "❓ Инструкция пользователя":
                     user_states.pop(chat_id, None)
                     handle_help(chat_id)
@@ -979,36 +1022,24 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 2. ДОХОД (устанавливаем состояние)
-                # ============================================================
                 if text == "📝 Доход":
                     user_states[chat_id] = {"action": "income_select"}
                     send_message(chat_id, "📝 *Выберите категорию доходов, либо нажмите 🔙 для выхода в главное меню*", category_keyboard("income"))
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 3. РАСХОД (устанавливаем состояние)
-                # ============================================================
                 if text == "💸 Расход":
                     user_states[chat_id] = {"action": "expense_select"}
                     send_message(chat_id, "💸 *Выберите категорию расходов, либо нажмите 🔙 для выхода в главное меню*", category_keyboard("expense"))
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 4. БЮДЖЕТ (устанавливаем состояние)
-                # ============================================================
                 if text == "📈 Бюджет":
                     user_states[chat_id] = {"action": "budget_select"}
                     handle_budget(chat_id)
                     offset = update["update_id"] + 1
                     continue
 
-                # ============================================================
-                # 5. СБРОСИТЬ ВСЁ
-                # ============================================================
                 if text == "🗑️ Сбросить всё":
                     user_states[chat_id] = {"action": "confirm_delete"}
                     send_message(
@@ -1047,10 +1078,8 @@ while True:
                     continue
 
                 # ============================================================
-                # 6. ОБРАБОТКА СОСТОЯНИЙ
+                # 2. ВЫБОР КАТЕГОРИИ ДОХОДА
                 # ============================================================
-
-                # --- ВЫБОР КАТЕГОРИИ ДОХОДА ---
                 if state and state.get("action") == "income_select":
                     if text in CATEGORIES["income"]:
                         state["category"] = text
@@ -1065,7 +1094,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ВВОД СУММЫ ДОХОДА ---
+                # ============================================================
+                # 3. ВВОД СУММЫ ДОХОДА
+                # ============================================================
                 if state and state.get("action") == "income_amount":
                     amount, description = extract_amount_and_desc(text)
                     if amount is not None:
@@ -1079,7 +1110,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ВЫБОР КАТЕГОРИИ РАСХОДА ---
+                # ============================================================
+                # 4. ВЫБОР КАТЕГОРИИ РАСХОДА
+                # ============================================================
                 if state and state.get("action") == "expense_select":
                     if text in CATEGORIES["expense"]:
                         state["category"] = text
@@ -1094,7 +1127,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ВВОД СУММЫ РАСХОДА ---
+                # ============================================================
+                # 5. ВВОД СУММЫ РАСХОДА
+                # ============================================================
                 if state and state.get("action") == "expense_amount":
                     amount, description = extract_amount_and_desc(text)
                     if amount is not None:
@@ -1120,7 +1155,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ВЫБОР КАТЕГОРИИ ДЛЯ БЮДЖЕТА ---
+                # ============================================================
+                # 6. ВЫБОР КАТЕГОРИИ ДЛЯ БЮДЖЕТА
+                # ============================================================
                 if state and state.get("action") == "budget_select":
                     if text in CATEGORIES["expense"]:
                         state["category"] = text
@@ -1149,7 +1186,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ВВОД БЮДЖЕТА ---
+                # ============================================================
+                # 7. ВВОД БЮДЖЕТА
+                # ============================================================
                 if state and state.get("action") == "budget_amount":
                     if text == "🗑️ Удалить лимит":
                         delete_budget(chat_id, state["category"])
@@ -1169,7 +1208,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ВЫБОР МЕСЯЦА ---
+                # ============================================================
+                # 8. ВЫБОР МЕСЯЦА
+                # ============================================================
                 if state and state.get("action") == "choose_month":
                     if text.startswith("📆 "):
                         month_str = text.replace("📆 ", "")
@@ -1186,7 +1227,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ДОНАТЫ ---
+                # ============================================================
+                # 9. ДОНАТЫ
+                # ============================================================
                 if state and state.get("action") == "donate_amount":
                     try:
                         amount = int(text)
@@ -1204,7 +1247,63 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ОТЗЫВЫ ---
+                # ============================================================
+                # 10. ВОССТАНОВЛЕНИЕ БД (RESTORE)
+                # ============================================================
+                if state and state.get("action") == "restore":
+                    if "document" in msg:
+                        file_id = msg["document"]["file_id"]
+                        file_name = msg["document"].get("file_name", "")
+                        
+                        if not file_name.endswith(".db"):
+                            send_message(chat_id, "❌ Неверный формат файла. Отправьте файл с расширением .db", back_keyboard())
+                            user_states.pop(chat_id, None)
+                            offset = update["update_id"] + 1
+                            continue
+                        
+                        try:
+                            send_message(chat_id, "⏳ Восстанавливаю базу данных...", back_keyboard())
+                            
+                            # Получаем файл
+                            file_info_url = f"https://api.telegram.org/bot{TG_TOKEN}/getFile"
+                            file_info = requests.get(file_info_url, params={"file_id": file_id}).json()
+                            file_path = file_info["result"]["file_path"]
+                            file_url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
+                            
+                            # Скачиваем файл
+                            response = requests.get(file_url)
+                            with open(DB_PATH, "wb") as f:
+                                f.write(response.content)
+                            
+                            # Проверяем, что база корректна
+                            try:
+                                conn = sqlite3.connect(DB_PATH)
+                                conn.execute("SELECT 1 FROM users LIMIT 1")
+                                conn.close()
+                            except:
+                                os.remove(DB_PATH)
+                                send_message(chat_id, "❌ Файл повреждён или не является корректной базой данных.", main_keyboard(chat_id))
+                                user_states.pop(chat_id, None)
+                                offset = update["update_id"] + 1
+                                continue
+                            
+                            send_message(chat_id, "✅ База данных восстановлена!", main_keyboard(chat_id))
+                            user_states.pop(chat_id, None)
+                            
+                            # Перезапускаем бота (вызовем init_db, чтобы убедиться, что структура правильная)
+                            init_db()
+                            
+                        except Exception as e:
+                            send_message(chat_id, f"❌ Ошибка восстановления: {e}", main_keyboard(chat_id))
+                            user_states.pop(chat_id, None)
+                    else:
+                        send_message(chat_id, "❌ Отправьте файл с расширением .db", back_keyboard())
+                    offset = update["update_id"] + 1
+                    continue
+
+                # ============================================================
+                # 11. ОТЗЫВЫ
+                # ============================================================
                 if state and state.get("action") == "review":
                     user_name = msg.get("from", {}).get("first_name", "Пользователь")
                     username = msg.get("from", {}).get("username", "")
@@ -1221,7 +1320,9 @@ while True:
                     offset = update["update_id"] + 1
                     continue
 
-                # --- ПЛАТЕЖИ ---
+                # ============================================================
+                # 12. ПЛАТЕЖИ
+                # ============================================================
                 if "successful_payment" in msg:
                     payment_info = msg["successful_payment"]
                     handle_successful_payment(chat_id, payment_info)
@@ -1229,7 +1330,7 @@ while True:
                     continue
 
                 # ============================================================
-                # 7. НЕИЗВЕСТНАЯ КОМАНДА
+                # 13. НЕИЗВЕСТНАЯ КОМАНДА
                 # ============================================================
                 if is_group:
                     offset = update["update_id"] + 1
@@ -1239,7 +1340,7 @@ while True:
                 offset = update["update_id"] + 1
 
         # ============================================================
-        # 8. PRE-CHECKOUT
+        # 14. PRE-CHECKOUT
         # ============================================================
         if "pre_checkout_query" in update:
             handle_pre_checkout_query(update["pre_checkout_query"])
