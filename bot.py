@@ -10,7 +10,7 @@ from openpyxl.styles import Font
 from flask import Flask, request
 import threading
 
-# ===== ЗАПУСК FLASK (для Render) =====
+# ===== ЗАПУСК FLASK =====
 app = Flask(__name__)
 
 @app.route('/')
@@ -30,8 +30,6 @@ def webhook():
 
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
-
-threading.Thread(target=run_flask, daemon=True).start()
 
 # ===== ТОКЕН И АДМИН =====
 TG_TOKEN = os.environ.get("TG_TOKEN")
@@ -102,9 +100,6 @@ def init_db():
 
 init_db()
 
-# ===== ПЕРЕМЕННАЯ ТЕХОБСЛУЖИВАНИЯ =====
-maintenance_mode = False
-
 # ===== КАТЕГОРИИ =====
 CATEGORIES = {
     "income": {
@@ -130,11 +125,9 @@ CATEGORIES = {
     }
 }
 
-# ===== ФУНКЦИЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ =====
 def format_amount(amount):
     return f"{amount:,.0f}".replace(",", " ")
 
-# ===== ФУНКЦИЯ ИЗВЛЕЧЕНИЯ ЧИСЛА ИЗ СТРОКИ =====
 def extract_amount_and_desc(text):
     match = re.search(r'([\d,\.]+)', text)
     if not match:
@@ -230,7 +223,6 @@ def get_report_for_month(user_id, year, month):
     next_month = month + 1 if month < 12 else 1
     next_year = year if month < 12 else year + 1
     month_end = f"{next_year}-{next_month:02d}-01"
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT type, category, SUM(amount) FROM transactions WHERE user_id = ? AND date >= ? AND date < ? GROUP BY type, category',
@@ -253,14 +245,12 @@ def get_monthly_income_expense(user_id, year, month):
     next_month = month + 1 if month < 12 else 1
     next_year = year if month < 12 else year + 1
     month_end = f"{next_year}-{next_month:02d}-01"
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT type, SUM(amount) FROM transactions WHERE user_id = ? AND date >= ? AND date < ? GROUP BY type',
               (user_id, month_start, month_end))
     result = c.fetchall()
     conn.close()
-    
     income = 0
     expense = 0
     for trans_type, amount in result:
@@ -319,22 +309,18 @@ def get_total_donations():
     conn.close()
     return total, count
 
-# ===== ВЫГРУЗКА В EXCEL =====
 def export_to_excel(chat_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT date, type, category, amount, description FROM transactions WHERE user_id = ? ORDER BY date DESC', (chat_id,))
     data = c.fetchall()
     conn.close()
-    
     if not data:
         send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
         return
-    
     wb = Workbook()
     default_sheet = wb.active
     wb.remove(default_sheet)
-    
     months = {}
     for row in data:
         try:
@@ -345,23 +331,18 @@ def export_to_excel(chat_id):
             months[month_key].append(row)
         except:
             continue
-    
     if not months:
         send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
         return
-    
     for month_key, month_data in months.items():
         month_name = datetime.strptime(month_key, "%Y-%m").strftime("%B %Y")
         ws = wb.create_sheet(title=month_name)
-        
         headers = ["Дата", "Тип", "Категория", "Сумма", "Описание"]
         for col_num, header in enumerate(headers, 1):
             ws.cell(row=1, column=col_num, value=header)
-        
         row_num = 2
         total_income = 0
         total_expense = 0
-        
         for row in month_data:
             try:
                 date_str = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M")
@@ -370,38 +351,30 @@ def export_to_excel(chat_id):
             trans_type = "Доход" if row[1] == "income" else "Расход"
             amount = row[3]
             formatted_amount = f"{amount:,.0f} р.".replace(",", " ")
-            
             ws.cell(row=row_num, column=1, value=date_str)
             ws.cell(row=row_num, column=2, value=trans_type)
             ws.cell(row=row_num, column=3, value=row[2])
             ws.cell(row=row_num, column=4, value=formatted_amount)
             ws.cell(row=row_num, column=5, value=row[4] or "")
-            
             if row[1] == "income":
                 total_income += amount
             else:
                 total_expense += amount
-            
             row_num += 1
-        
         bold_font = Font(bold=True)
         row_num += 1
-        
         ws.cell(row=row_num, column=3, value="ИТОГО ДОХОДЫ:")
         ws.cell(row=row_num, column=4, value=f"{total_income:,.0f} р.".replace(",", " "))
         ws.cell(row=row_num, column=3).font = bold_font
-        
         row_num += 1
         ws.cell(row=row_num, column=3, value="ИТОГО РАСХОДЫ:")
         ws.cell(row=row_num, column=4, value=f"{total_expense:,.0f} р.".replace(",", " "))
         ws.cell(row=row_num, column=3).font = bold_font
-        
         row_num += 1
         balance = total_income - total_expense
         ws.cell(row=row_num, column=3, value="ДОСТУПНЫЙ БАЛАНС:")
         ws.cell(row=row_num, column=4, value=f"{balance:,.0f} р.".replace(",", " "))
         ws.cell(row=row_num, column=3).font = bold_font
-        
         for col in ws.columns:
             max_length = 0
             col_letter = col[0].column_letter
@@ -409,39 +382,30 @@ def export_to_excel(chat_id):
                 if cell.value:
                     max_length = max(max_length, len(str(cell.value)))
             ws.column_dimensions[col_letter].width = max_length + 2
-    
     filename = f"отчёт_{datetime.now().strftime('%B %Y')}.xlsx"
     wb.save(filename)
-    
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
     files = {'document': open(filename, 'rb')}
     data = {'chat_id': chat_id}
     requests.post(url, files=files, data=data)
-    
     os.remove(filename)
     send_message(chat_id, "✅ Файл отправлен!", main_keyboard(chat_id))
 
-# ===== СТАТИСТИКА =====
 def get_stats():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
     c.execute('SELECT COUNT(*) FROM users')
     total_users = c.fetchone()[0]
-    
     week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
     c.execute('SELECT COUNT(*) FROM users WHERE last_activity >= ?', (week_ago,))
     active_users = c.fetchone()[0]
-    
     month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
     c.execute('SELECT COUNT(*) FROM transactions WHERE date >= ?', (month_start,))
     total_ops = c.fetchone()[0]
-    
     c.execute('SELECT SUM(amount) FROM transactions WHERE type = "income" AND date >= ?', (month_start,))
     total_income = c.fetchone()[0] or 0
     c.execute('SELECT SUM(amount) FROM transactions WHERE type = "expense" AND date >= ?', (month_start,))
     total_expense = c.fetchone()[0] or 0
-    
     conn.close()
     return {
         "total_users": total_users,
@@ -451,7 +415,6 @@ def get_stats():
         "total_expense": total_expense
     }
 
-# ===== КЛАВИАТУРЫ =====
 def main_keyboard(chat_id):
     keyboard = [
         ["💰 Баланс", "📊 Отчёт"],
@@ -529,17 +492,9 @@ def send_message(chat_id, text, keyboard=None):
     except Exception as e:
         print(f"⚠️ Ошибка отправки: {e}")
 
-# ===== ОБРАБОТЧИКИ =====
 def process_text_command(chat_id, text):
-    """Обрабатывает команды из чата И из Mini App"""
     if not get_user(chat_id):
         create_user(chat_id)
-
-    if maintenance_mode and chat_id != ADMIN_ID:
-        send_message(chat_id, "🔧 *Технические работы*\n\nБот временно недоступен.", main_keyboard(chat_id))
-        return
-
-    # ===== ДОХОД ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Доход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -554,8 +509,6 @@ def process_text_command(chat_id, text):
             except:
                 send_message(chat_id, "❌ Ошибка формата дохода. Используйте: Доход 15000 Зарплата", main_keyboard(chat_id))
         return
-
-    # ===== РАСХОД ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Расход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -570,8 +523,6 @@ def process_text_command(chat_id, text):
             except:
                 send_message(chat_id, "❌ Ошибка формата расхода. Используйте: Расход 500 Еда", main_keyboard(chat_id))
         return
-
-    # ===== БЮДЖЕТ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Бюджет "):
         parts = text.split(" ", 2)
         if len(parts) >= 3:
@@ -583,8 +534,6 @@ def process_text_command(chat_id, text):
             except:
                 send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
         return
-
-    # ===== ОТЗЫВ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
@@ -605,8 +554,6 @@ def process_text_command(chat_id, text):
         send_message(REVIEW_GROUP_ID, notify_text)
         send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
         return
-
-    # ===== ДОНАТ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("⭐ Донат "):
         try:
             amount = int(text.split(" ")[2])
@@ -615,13 +562,18 @@ def process_text_command(chat_id, text):
         except:
             send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
         return
-
-    # ===== СТАТИСТИКА =====
     if text == "📊 Статистика" and chat_id == ADMIN_ID:
-        handle_stats(chat_id)
+        stats = get_stats()
+        text = (
+            "📊 *Статистика бота*\n\n"
+            f"👥 Всего пользователей: {stats['total_users']}\n"
+            f"📆 Активных за 7 дней: {stats['active_users']}\n"
+            f"📝 Операций за месяц: {stats['total_ops']}\n"
+            f"💰 Доходы: {format_amount(stats['total_income'])} р.\n"
+            f"📉 Расходы: {format_amount(stats['total_expense'])} р."
+        )
+        send_message(chat_id, text, main_keyboard(chat_id))
         return
-
-    # ===== ОСТАЛЬНЫЕ КОМАНДЫ (из старого кода) =====
     if text == "/start":
         handle_start(chat_id)
         return
@@ -652,15 +604,10 @@ def process_text_command(chat_id, text):
     if text == "🗑️ Сбросить всё":
         handle_reset(chat_id)
         return
-    if text == "🗑️ Удалить лимит":
-        send_message(chat_id, "❌ Удаление лимита доступно только в чате.", main_keyboard(chat_id))
-        return
     if text == "✅ Да, удалить всё":
         delete_all_data(chat_id)
         send_message(chat_id, "🗑️ Все данные удалены!", main_keyboard(chat_id))
         return
-
-    # Если ничего не подошло
     send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
 
 def handle_start(chat_id):
@@ -670,63 +617,24 @@ def handle_start(chat_id):
         "📌 Записывайте доходы и расходы.\n"
         "📊 Стройте отчёты по месяцам.\n"
         "📤 Выгружайте данные в Excel.\n"
-        "📈 Устанавливайте лимиты на категории расходов — бот предупредит о превышении расхода.\n\n"
+        "📈 Устанавливайте лимиты на категории расходов.\n\n"
         "Подробная информация — в кнопке «❓ Инструкция пользователя»."
     )
     send_message(chat_id, text, main_keyboard(chat_id))
 
 def handle_help(chat_id):
-    text1 = (
-        "📖 *Инструкция пользователя (часть 1/3)*\n\n"
-        "💰 *Финансовый помощник* помогает вести учёт доходов и расходов.\n\n"
-        "🔹 *Как записать доход:*\n"
-        "1. Нажмите «📝 Доход»\n"
-        "2. Выберите категорию (например, «💰 Зарплата»)\n"
-        "3. Введите сумму и описание\n"
-        "   *Пример:* 15000 зарплата\n\n"
-        "🔹 *Как записать расход:*\n"
-        "1. Нажмите «💸 Расход»\n"
-        "2. Выберите категорию (например, «🍔 Еда»)\n"
-        "3. Введите сумму и описание\n"
-        "   *Пример:* 500 обед\n\n"
-        "📌 *Если меню не появилось — просто отправьте «Старт» ещё раз.*"
+    text = (
+        "📖 *Инструкция*\n\n"
+        "💰 Доход: выберите категорию → введите сумму\n"
+        "💸 Расход: выберите категорию → введите сумму\n"
+        "📈 Бюджет: установите лимит на категорию\n"
+        "📊 Отчёт: покажет доходы и расходы за месяц\n"
+        "📤 Excel: выгрузит все операции\n"
+        "⭐ Донат: поддержите разработчика\n"
+        "💬 Отзыв: напишите своё мнение\n"
+        "🗑️ Сброс: удалить все данные"
     )
-    send_message(chat_id, text1, main_keyboard(chat_id))
-    time.sleep(0.5)
-    
-    text2 = (
-        "📖 *Инструкция пользователя (часть 2/3)*\n\n"
-        "🔹 *Что такое бюджет?*\n"
-        "Это функция установки лимита расходов на категорию в месяц.\n"
-        "Нажмите «📈 Бюджет», выберите категорию — бот покажет текущий лимит (если он есть).\n"
-        "Вы можете установить новый лимит, изменить его или удалить.\n"
-        "Если превысите лимит — бот предупредит.\n\n"
-        "🔹 *Как посмотреть отчёт?*\n"
-        "Нажмите «📊 Отчёт» — бот покажет текущий месяц.\n"
-        "Нажмите «📅 Выбрать месяц» — можно посмотреть любой месяц."
-    )
-    send_message(chat_id, text2)
-    time.sleep(0.5)
-    
-    text3 = (
-        "📖 *Инструкция пользователя (часть 3/3)*\n\n"
-        "🔹 *Как посмотреть историю?*\n"
-        "Нажмите «📋 История» — бот покажет последние операции.\n"
-        "Листайте с помощью кнопок «🔙 Назад» и «➡️ Дальше».\n\n"
-        "🔹 *Как удалить все данные?*\n"
-        "Нажмите «🗑️ Сбросить всё» — бот запросит подтверждение.\n\n"
-        "🔹 *Как выгрузить данные в Excel?*\n"
-        "Нажмите «📤 Выгрузка в Excel» — бот пришлёт файл с таблицей.\n"
-        "В файле будут все ваши операции: дата, тип, категория, сумма и описание.\n"
-        "Внизу таблицы — итоги: общие доходы, расходы и доступный баланс.\n\n"
-        "⭐ *Донат:*\n"
-        "Вы можете оставить чаевые разработчику — кнопка «⭐ Донат» в меню.\n"
-        "💰 Приём донатов осуществляется через Telegram Stars.\n\n"
-        "💬 *Отзыв:*\n"
-        "Нажмите «💬 Отзыв» и напишите своё мнение о боте.\n"
-        "Это поможет сделать его лучше!"
-    )
-    send_message(chat_id, text3, main_keyboard(chat_id))
+    send_message(chat_id, text, main_keyboard(chat_id))
 
 def handle_balance(chat_id):
     balance, income, expense = get_balance(chat_id)
@@ -747,12 +655,10 @@ def handle_report_current(chat_id):
     text += f"↗️ Доходы: {format_amount(income)} р.\n"
     text += f"↘️ Расходы: {format_amount(expense)} р.\n"
     text += f"💵 Свободно: {format_amount(balance)} р.\n\n"
-    
     expense_cats = {}
     for trans_type, category, amount in data:
         if trans_type == "expense":
             expense_cats[category] = expense_cats.get(category, 0) + amount
-    
     if expense_cats:
         text += "🔹 *Расходы по категориям:*\n"
         for cat, amount in sorted(expense_cats.items(), key=lambda x: x[1], reverse=True):
@@ -765,7 +671,6 @@ def handle_report_current(chat_id):
             text += line + "\n"
     else:
         text += "🔹 Расходов нет\n"
-    
     send_message(chat_id, text, main_keyboard(chat_id))
 
 def handle_budget(chat_id):
@@ -773,33 +678,12 @@ def handle_budget(chat_id):
     send_message(chat_id, "📈 *Выберите категорию для бюджета:*", two_column_keyboard(cats))
 
 def handle_donate(chat_id):
-    text = (
-        "⭐ *Оставить чаевые*\n\n"
-        "Напишите сумму в Stars (например, 10, 25, 50)."
-    )
+    text = "⭐ *Оставить чаевые*\n\nНапишите сумму в Stars (например, 10, 25, 50)."
     send_message(chat_id, text, back_keyboard())
 
 def handle_review(chat_id):
-    text = (
-        "💬 *Оставить отзыв*\n\n"
-        "Напишите ваше мнение о боте одним сообщением."
-    )
+    text = "💬 *Оставить отзыв*\n\nНапишите ваше мнение о боте одним сообщением."
     send_message(chat_id, text, back_keyboard())
-
-def handle_stats(chat_id):
-    if chat_id != ADMIN_ID:
-        send_message(chat_id, "⛔ Нет доступа.", main_keyboard(chat_id))
-        return
-    stats = get_stats()
-    text = (
-        "📊 *Статистика бота*\n\n"
-        f"👥 Всего пользователей: {stats['total_users']}\n"
-        f"📆 Активных за 7 дней: {stats['active_users']}\n"
-        f"📝 Операций за месяц: {stats['total_ops']}\n"
-        f"💰 Доходы: {format_amount(stats['total_income'])} р.\n"
-        f"📉 Расходы: {format_amount(stats['total_expense'])} р."
-    )
-    send_message(chat_id, text, main_keyboard(chat_id))
 
 def handle_history(chat_id, page=0):
     total = get_total_transactions(chat_id)
@@ -821,9 +705,7 @@ def handle_history(chat_id, page=0):
 def handle_reset(chat_id):
     send_message(
         chat_id,
-        "⚠️ *ВНИМАНИЕ!*\n\nВы действительно хотите удалить ВСЕ свои данные?\n"
-        "(доходы, расходы, бюджеты)\n\n"
-        "Это действие НЕЛЬЗЯ отменить!",
+        "⚠️ *ВНИМАНИЕ!*\n\nВы действительно хотите удалить ВСЕ свои данные?\n(доходы, расходы, бюджеты)\n\nЭто действие НЕЛЬЗЯ отменить!",
         confirm_delete_keyboard()
     )
 
@@ -867,3 +749,9 @@ def handle_successful_payment(chat_id, payment_info):
 
 print("✅ Бот готов! Ожидаю Webhook-запросы...")
 print("=" * 50)
+
+# ===== ЗАПУСК FLASK В ОТДЕЛЬНОМ ПОТОКЕ =====
+threading.Thread(target=run_flask, daemon=True).start()
+
+# ===== БЛОКИРУЕМ ОСНОВНОЙ ПОТОК, ЧТОБЫ ОН НЕ ЗАВЕРШИЛСЯ =====
+threading.Event().wait()
