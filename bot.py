@@ -54,8 +54,7 @@ if not resp.json().get("ok"):
 print("✅ Telegram подключён")
 
 # ===== УСТАНОВКА WEBHOOK =====
-# ===== УСТАНОВКА WEBHOOK =====
-WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://finance-bot-ldes.onrender.com") + "/webhook"
+WEBHOOK_URL = "https://finance-bot-ldes.onrender.com/webhook"
 print(f"🔗 Устанавливаю Webhook: {WEBHOOK_URL}")
 webhook_url = f"https://api.telegram.org/bot{TG_TOKEN}/setWebhook?url={WEBHOOK_URL}"
 resp = requests.get(webhook_url)
@@ -63,6 +62,7 @@ if resp.json().get("ok"):
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 else:
     print("❌ Ошибка установки Webhook:", resp.json())
+
 # ===== БАЗА ДАННЫХ =====
 DB_PATH = "finance.db"
 
@@ -866,4 +866,4 @@ def handle_successful_payment(chat_id, payment_info):
         print(f"⚠️ Ошибка обработки платежа: {e}")
 
 print("✅ Бот готов! Ожидаю Webhook-запросы...")
-print("=" * 50)              
+print("=" * 50)
