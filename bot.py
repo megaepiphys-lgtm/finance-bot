@@ -54,14 +54,15 @@ if not resp.json().get("ok"):
 print("✅ Telegram подключён")
 
 # ===== УСТАНОВКА WEBHOOK =====
-WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://твой-сервис.onrender.com") + "/webhook"
+# ===== УСТАНОВКА WEBHOOK =====
+WEBHOOK_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://finance-bot-ldes.onrender.com") + "/webhook"
+print(f"🔗 Устанавливаю Webhook: {WEBHOOK_URL}")
 webhook_url = f"https://api.telegram.org/bot{TG_TOKEN}/setWebhook?url={WEBHOOK_URL}"
 resp = requests.get(webhook_url)
 if resp.json().get("ok"):
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
 else:
     print("❌ Ошибка установки Webhook:", resp.json())
-
 # ===== БАЗА ДАННЫХ =====
 DB_PATH = "finance.db"
 
