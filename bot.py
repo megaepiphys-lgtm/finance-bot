@@ -20,6 +20,8 @@ def home():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
+    print(f"📥 Входящие данные: {data}")  # ОТЛАДКА: покажет всё, что пришло
+
     if data and "message" in data:
         msg = data["message"]
         chat_id = msg["chat"]["id"]
@@ -27,6 +29,9 @@ def webhook():
         if text:
             print(f"📥 Получено сообщение: {text}")
             process_text_command(chat_id, text)
+    else:
+        print("⚠️ Данные не содержат сообщение")
+
     return "ok", 200
 
 def run_flask():
