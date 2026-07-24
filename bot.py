@@ -25,6 +25,7 @@ def webhook():
         chat_id = msg["chat"]["id"]
         text = msg.get("text", "")
         if text:
+            print(f"📥 Получено сообщение: {text}")
             process_text_command(chat_id, text)
     return "ok", 200
 
@@ -492,9 +493,14 @@ def send_message(chat_id, text, keyboard=None):
     except Exception as e:
         print(f"⚠️ Ошибка отправки: {e}")
 
+# ===== ОБРАБОТЧИК КОМАНД =====
 def process_text_command(chat_id, text):
+    print(f"📥 Обработка команды: {text}")
+    
     if not get_user(chat_id):
         create_user(chat_id)
+    
+    # ===== ДОХОД ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Доход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -506,9 +512,11 @@ def process_text_command(chat_id, text):
                     category, desc = category.split(" ", 1)
                 add_transaction(chat_id, "income", category, amount, desc)
                 send_message(chat_id, f"✅ Доход записан!\n{category}: {format_amount(amount)} р.", main_keyboard(chat_id))
-            except:
-                send_message(chat_id, "❌ Ошибка формата дохода. Используйте: Доход 15000 Зарплата", main_keyboard(chat_id))
+            except Exception as e:
+                send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
+    
+    # ===== РАСХОД ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Расход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -520,9 +528,11 @@ def process_text_command(chat_id, text):
                     category, desc = category.split(" ", 1)
                 add_transaction(chat_id, "expense", category, amount, desc)
                 send_message(chat_id, f"✅ Расход записан!\n{category}: {format_amount(amount)} р.", main_keyboard(chat_id))
-            except:
-                send_message(chat_id, "❌ Ошибка формата расхода. Используйте: Расход 500 Еда", main_keyboard(chat_id))
+            except Exception as e:
+                send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
+    
+    # ===== БЮДЖЕТ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Бюджет "):
         parts = text.split(" ", 2)
         if len(parts) >= 3:
@@ -534,6 +544,8 @@ def process_text_command(chat_id, text):
             except:
                 send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
         return
+    
+    # ===== ОТЗЫВ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
@@ -554,6 +566,8 @@ def process_text_command(chat_id, text):
         send_message(REVIEW_GROUP_ID, notify_text)
         send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
         return
+    
+    # ===== ДОНАТ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("⭐ Донат "):
         try:
             amount = int(text.split(" ")[2])
@@ -562,6 +576,8 @@ def process_text_command(chat_id, text):
         except:
             send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
         return
+    
+    # ===== СТАТИСТИКА =====
     if text == "📊 Статистика" and chat_id == ADMIN_ID:
         stats = get_stats()
         text = (
@@ -574,6 +590,8 @@ def process_text_command(chat_id, text):
         )
         send_message(chat_id, text, main_keyboard(chat_id))
         return
+    
+    # ===== КОМАНДЫ ИЗ ЧАТА =====
     if text == "/start":
         handle_start(chat_id)
         return
@@ -608,8 +626,10 @@ def process_text_command(chat_id, text):
         delete_all_data(chat_id)
         send_message(chat_id, "🗑️ Все данные удалены!", main_keyboard(chat_id))
         return
+    
     send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
 
+# ===== ОБРАБОТЧИКИ КОМАНД ИЗ ЧАТА =====
 def handle_start(chat_id):
     create_user(chat_id)
     text = (
@@ -753,5 +773,5 @@ print("=" * 50)
 # ===== ЗАПУСК FLASK В ОТДЕЛЬНОМ ПОТОКЕ =====
 threading.Thread(target=run_flask, daemon=True).start()
 
-# ===== БЛОКИРУЕМ ОСНОВНОЙ ПОТОК, ЧТОБЫ ОН НЕ ЗАВЕРШИЛСЯ =====
+# ===== БЛОКИРУЕМ ОСНОВНОЙ ПОТОК =====
 threading.Event().wait()
