@@ -33,7 +33,7 @@ def webhook():
     print(f"📥 Входящие данные: {data}")
 
     if not data:
-        return "ok", 200
+        return {"status": "ok"}, 200
 
     # ===== ЗАПРОС ИЗ MINI APP =====
     if "chat_id" in data and "text" in data:
