@@ -12,7 +12,6 @@ import threading
 
 app = Flask(__name__)
 
-# ===== CORS =====
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -46,6 +45,9 @@ def webhook():
     # ===== ОБЫЧНОЕ СООБЩЕНИЕ ОТ TELEGRAM =====
     if "message" in data:
         msg = data["message"]
+        # Пропускаем сообщения от самого бота
+        if msg.get("from", {}).get("is_bot"):
+            return {"status": "ok"}, 200
         chat_id = msg["chat"]["id"]
         text = msg.get("text", "")
         if text:
