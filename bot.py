@@ -7,15 +7,26 @@ import re
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from flask import Flask
+from flask import Flask, request  # <-- ДОБАВЛЕН request
 import threading
 
-# ===== ЗАПУСК FLASK (для Render) =====
+# ===== ЗАПУСК FLASK =====
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "Бот работает!"
+
+# ===== WEBHOOK ДЛЯ MINI APP =====
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.get_json()
+    if data and "chat_id" in data and "text" in data:
+        chat_id = data["chat_id"]
+        text = data["text"]
+        print(f"📥 Команда из Mini App: {text}")
+        process_text_command(chat_id, text)  # <-- Используем ту же функцию, что и для чата
+    return {"status": "ok"}, 200
 
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
@@ -811,6 +822,148 @@ def handle_restore(chat_id):
     send_message(chat_id, "📤 Отправьте файл с бэкапом (файл должен быть в формате .db)", back_keyboard())
     user_states[chat_id] = {"action": "restore"}
 
+def process_text_command(chat_id, text):
+    print(f"📥 Обработка команды: {text}")
+    
+    if not get_user(chat_id):
+        create_user(chat_id)
+    
+    # ===== ДОХОД =====
+    if text.startswith("Доход "):
+        parts = text.split(" ", 2)
+        if len(parts) >= 2:
+            try:
+                amount = float(parts[1])
+                category = parts[2] if len(parts) > 2 else "💰 Другое"
+                desc = ""
+                if " " in category:
+                    category, desc = category.split(" ", 1)
+                add_transaction(chat_id, "income", category, amount, desc)
+                send_message(chat_id, f"✅ Доход записан!\n{category}: {format_amount(amount)} р.", main_keyboard(chat_id))
+            except Exception as e:
+                send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
+        return
+    
+    # ===== РАСХОД =====
+    if text.startswith("Расход "):
+        parts = text.split(" ", 2)
+        if len(parts) >= 2:
+            try:
+                amount = float(parts[1])
+                category = parts[2] if len(parts) > 2 else "💰 Другое"
+                desc = ""
+                if " " in category:
+                    category, desc = category.split(" ", 1)
+                add_transaction(chat_id, "expense", category, amount, desc)
+                send_message(chat_id, f"✅ Расход записан!\n{category}: {format_amount(amount)} р.", main_keyboard(chat_id))
+            except Exception as e:
+                send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
+        return
+    
+    # ===== БЮДЖЕТ =====
+    if text.startswith("Бюджет "):
+        parts = text.split(" ", 2)
+        if len(parts) >= 3:
+            try:
+                category = parts[1]
+                amount = float(parts[2])
+                set_budget(chat_id, category, amount)
+                send_message(chat_id, f"✅ Бюджет для {category}: {format_amount(amount)} р.", main_keyboard(chat_id))
+            except:
+                send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
+        return
+    
+    # ===== ОТЗЫВ =====
+    if text.startswith("Отзыв: "):
+        review_text = text[7:]
+        user_name = "Пользователь"
+        try:
+            url = f"https://api.telegram.org/bot{TG_TOKEN}/getChat"
+            params = {"chat_id": chat_id}
+            response = requests.get(url, params=params)
+            user_data = response.json()
+            if user_data.get("ok"):
+                user_name = user_data.get("result", {}).get("first_name", "Пользователь")
+        except:
+            pass
+        notify_text = (
+            f"💬 *Новый отзыв*\n\n"
+            f"👤 От: {user_name}\n"
+            f"📝 Текст:\n{review_text}"
+        )
+        send_message(REVIEW_GROUP_ID, notify_text)
+        send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
+        return
+    
+    # ===== ДОНАТ =====
+    if text.startswith("⭐ Донат "):
+        try:
+            amount = int(text.split(" ")[2])
+            add_donation(chat_id, amount)
+            send_message(chat_id, f"🙏 Спасибо за донат {amount} Stars!", main_keyboard(chat_id))
+        except:
+            send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
+        return
+    
+    # ===== СТАТИСТИКА =====
+    if text == "📊 Статистика" and chat_id == ADMIN_ID:
+        stats = get_stats()
+        text = (
+            "📊 *Статистика бота*\n\n"
+            f"👥 Всего пользователей: {stats['total_users']}\n"
+            f"📆 Активных за 7 дней: {stats['active_users']}\n"
+            f"📝 Операций за месяц: {stats['total_ops']}\n"
+            f"💰 Доходы: {format_amount(stats['total_income'])} р.\n"
+            f"📉 Расходы: {format_amount(stats['total_expense'])} р."
+        )
+        send_message(chat_id, text, main_keyboard(chat_id))
+        return
+    
+    # ===== КОМАНДЫ ИЗ ЧАТА =====
+    if text == "/start":
+        handle_start(chat_id)
+        return
+    if text == "/help" or text == "❓ Инструкция пользователя":
+        handle_help(chat_id)
+        return
+    if text == "💰 Баланс":
+        handle_balance(chat_id)
+        return
+    if text == "📊 Отчёт":
+        handle_report_current(chat_id)
+        return
+    if text == "📋 История":
+        handle_history(chat_id, 0)
+        return
+    if text == "📤 Выгрузка в Excel":
+        export_to_excel(chat_id)
+        return
+    if text == "⭐ Донат":
+        handle_donate(chat_id)
+        return
+    if text == "💬 Отзыв":
+        handle_review(chat_id)
+        return
+    if text == "📈 Бюджет":
+        handle_budget(chat_id)
+        return
+    if text == "🗑️ Сбросить всё":
+        handle_reset(chat_id)
+        return
+    if text == "✅ Да, удалить всё":
+        delete_all_data(chat_id)
+        send_message(chat_id, "🗑️ Все данные удалены!", main_keyboard(chat_id))
+        return
+    
+    send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
+
+def handle_reset(chat_id):
+    send_message(
+        chat_id,
+        "⚠️ *ВНИМАНИЕ!*\n\nВы действительно хотите удалить ВСЕ свои данные?\n(доходы, расходы, бюджеты)\n\nЭто действие НЕЛЬЗЯ отменить!",
+        confirm_delete_keyboard()
+    )
+
 def send_invoice(chat_id, amount):
     try:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/sendInvoice"
@@ -843,38 +996,9 @@ def handle_pre_checkout_query(pre_checkout_query):
 
 def handle_successful_payment(chat_id, payment_info):
     try:
-        total, count = get_total_donations()
         amount = payment_info.get("total_amount", 0) // 100
         add_donation(chat_id, amount)
-        
-        thank_text = (
-            "🙏 *Спасибо за чаевые!*\n\n"
-            "Вы помогаете развивать бота и делать его лучше ❤️"
-        )
-        send_message(chat_id, thank_text, main_keyboard(chat_id))
-        
-        user_name = chat_id
-        try:
-            url = f"https://api.telegram.org/bot{TG_TOKEN}/getChat"
-            params = {"chat_id": chat_id}
-            response = requests.get(url, params=params)
-            user_data = response.json()
-            if user_data.get("ok"):
-                user_name = user_data.get("result", {}).get("first_name", "Пользователь")
-        except:
-            pass
-        
-        new_total, new_count = get_total_donations()
-        notify_text = (
-            f"🎉 *Новый донат!*\n\n"
-            f"👤 От: {user_name}\n"
-            f"⭐ Сумма: {amount} Stars\n"
-            f"📅 Дата: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
-            f"💰 Всего собрано: {new_total} Stars\n"
-            f"📦 Всего донатов: {new_count}"
-        )
-        send_message(REVIEW_GROUP_ID, notify_text)
-        
+        send_message(chat_id, "🙏 Спасибо за чаевые! ❤️", main_keyboard(chat_id))
     except Exception as e:
         print(f"⚠️ Ошибка обработки платежа: {e}")
 
