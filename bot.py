@@ -1,4 +1,4 @@
-import requests
+   import requests
 import time
 import json
 import sqlite3
@@ -10,7 +10,6 @@ from openpyxl.styles import Font
 from flask import Flask, request
 import threading
 
-# ===== ЗАПУСК FLASK =====
 app = Flask(__name__)
 
 @app.route('/')
@@ -22,28 +21,34 @@ def webhook():
     data = request.get_json()
     print(f"📥 Входящие данные: {data}")
 
-    if data and "message" in data:
+    if not data:
+        return "ok", 200
+
+    # ===== ЗАПРОС ИЗ MINI APP =====
+    if "chat_id" in data and "text" in data:
+        chat_id = data["chat_id"]
+        text = data["text"]
+        print(f"📥 Команда из Mini App: {text}")
+        process_text_command(chat_id, text)
+        return "ok", 200
+
+    # ===== ОБЫЧНОЕ СООБЩЕНИЕ ОТ TELEGRAM =====
+    if "message" in data:
         msg = data["message"]
         chat_id = msg["chat"]["id"]
-
-        # ===== ОБРАБОТКА MINI APP (web_app_data) =====
-        if "web_app_data" in msg:
-            text = msg["web_app_data"]["data"]
-            print(f"📥 WebAppData: {text}")
+        text = msg.get("text", "")
+        if text:
+            print(f"📥 Сообщение из чата: {text}")
             process_text_command(chat_id, text)
-        else:
-            # ===== ОБЫЧНЫЕ ТЕКСТОВЫЕ СООБЩЕНИЯ =====
-            text = msg.get("text", "")
-            if text:
-                print(f"📥 Сообщение: {text}")
-                process_text_command(chat_id, text)
+        return "ok", 200
 
     return "ok", 200
 
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
-# ===== ТОКЕН И АДМИН =====
+threading.Thread(target=run_flask, daemon=True).start()
+
 TG_TOKEN = os.environ.get("TG_TOKEN")
 ADMIN_ID = 7461823442
 REVIEW_GROUP_ID = -1004397763875
@@ -54,7 +59,6 @@ if not TG_TOKEN:
 
 print("🚀 Запуск финансового помощника...")
 
-# ===== ПРОВЕРКА TELEGRAM =====
 url = f"https://api.telegram.org/bot{TG_TOKEN}/getMe"
 resp = requests.get(url)
 if not resp.json().get("ok"):
@@ -63,7 +67,6 @@ if not resp.json().get("ok"):
 
 print("✅ Telegram подключён")
 
-# ===== УСТАНОВКА WEBHOOK =====
 WEBHOOK_URL = "https://finance-bot-ldes.onrender.com/webhook"
 print(f"🔗 Устанавливаю Webhook: {WEBHOOK_URL}")
 webhook_url = f"https://api.telegram.org/bot{TG_TOKEN}/setWebhook?url={WEBHOOK_URL}"
@@ -73,7 +76,6 @@ if resp.json().get("ok"):
 else:
     print("❌ Ошибка установки Webhook:", resp.json())
 
-# ===== БАЗА ДАННЫХ =====
 DB_PATH = "finance.db"
 
 def init_db():
@@ -112,7 +114,6 @@ def init_db():
 
 init_db()
 
-# ===== КАТЕГОРИИ =====
 CATEGORIES = {
     "income": {
         "💰 Зарплата": "основная работа",
@@ -154,7 +155,6 @@ def extract_amount_and_desc(text):
         desc = desc[1:].strip()
     return amount, desc
 
-# ===== ФУНКЦИИ БАЗЫ =====
 def get_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -504,14 +504,12 @@ def send_message(chat_id, text, keyboard=None):
     except Exception as e:
         print(f"⚠️ Ошибка отправки: {e}")
 
-# ===== ОБРАБОТЧИК КОМАНД =====
 def process_text_command(chat_id, text):
     print(f"📥 Обработка команды: {text}")
     
     if not get_user(chat_id):
         create_user(chat_id)
     
-    # ===== ДОХОД ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Доход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -527,7 +525,6 @@ def process_text_command(chat_id, text):
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
     
-    # ===== РАСХОД ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Расход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -543,7 +540,6 @@ def process_text_command(chat_id, text):
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
     
-    # ===== БЮДЖЕТ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Бюджет "):
         parts = text.split(" ", 2)
         if len(parts) >= 3:
@@ -556,7 +552,6 @@ def process_text_command(chat_id, text):
                 send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
         return
     
-    # ===== ОТЗЫВ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
@@ -578,7 +573,6 @@ def process_text_command(chat_id, text):
         send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
         return
     
-    # ===== ДОНАТ ИЗ ИНТЕРФЕЙСА =====
     if text.startswith("⭐ Донат "):
         try:
             amount = int(text.split(" ")[2])
@@ -588,7 +582,6 @@ def process_text_command(chat_id, text):
             send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
         return
     
-    # ===== СТАТИСТИКА =====
     if text == "📊 Статистика" and chat_id == ADMIN_ID:
         stats = get_stats()
         text = (
@@ -602,7 +595,6 @@ def process_text_command(chat_id, text):
         send_message(chat_id, text, main_keyboard(chat_id))
         return
     
-    # ===== КОМАНДЫ ИЗ ЧАТА =====
     if text == "/start":
         handle_start(chat_id)
         return
@@ -640,7 +632,6 @@ def process_text_command(chat_id, text):
     
     send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
 
-# ===== ОБРАБОТЧИКИ КОМАНД ИЗ ЧАТА =====
 def handle_start(chat_id):
     create_user(chat_id)
     text = (
@@ -781,8 +772,4 @@ def handle_successful_payment(chat_id, payment_info):
 print("✅ Бот готов! Ожидаю Webhook-запросы...")
 print("=" * 50)
 
-# ===== ЗАПУСК FLASK В ОТДЕЛЬНОМ ПОТОКЕ =====
-threading.Thread(target=run_flask, daemon=True).start()
-
-# ===== БЛОКИРУЕМ ОСНОВНОЙ ПОТОК =====
-threading.Event().wait()
+threading.Event().wait()           
