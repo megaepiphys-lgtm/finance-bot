@@ -18,14 +18,17 @@ def home():
     return "Бот работает!"
 
 # ===== WEBHOOK ДЛЯ MINI APP =====
-@app.route('/webhook', methods=['POST'])
+@app.route('/webhook', methods=['POST', 'OPTIONS'])
 def webhook():
+    if request.method == 'OPTIONS':
+        return '', 200
     data = request.get_json()
+    print(f"📥 Входящие данные: {data}")
     if data and "chat_id" in data and "text" in data:
         chat_id = data["chat_id"]
         text = data["text"]
         print(f"📥 Команда из Mini App: {text}")
-        process_text_command(chat_id, text)  # <-- Используем ту же функцию, что и для чата
+        process_text_command(chat_id, text)
     return {"status": "ok"}, 200
 
 def run_flask():
