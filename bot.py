@@ -12,7 +12,7 @@ import threading
 
 app = Flask(__name__)
 
-# ===== CORS (разрешаем запросы с любых доменов) =====
+# ===== CORS =====
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -41,7 +41,7 @@ def webhook():
         text = data["text"]
         print(f"📥 Команда из Mini App: {text}")
         process_text_command(chat_id, text)
-        return "ok", 200
+        return {"status": "ok"}, 200
 
     # ===== ОБЫЧНОЕ СООБЩЕНИЕ ОТ TELEGRAM =====
     if "message" in data:
@@ -51,9 +51,9 @@ def webhook():
         if text:
             print(f"📥 Сообщение из чата: {text}")
             process_text_command(chat_id, text)
-        return "ok", 200
+        return {"status": "ok"}, 200
 
-    return "ok", 200
+    return {"status": "ok"}, 200
 
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
@@ -516,12 +516,261 @@ def send_message(chat_id, text, keyboard=None):
     except Exception as e:
         print(f"⚠️ Ошибка отправки: {e}")
 
+# ===== ОБРАБОТЧИКИ =====
+def handle_start(chat_id):
+    create_user(chat_id)
+    text = (
+        "💰 *Финансовый помощник*\n\n"
+        "📌 Записывайте доходы и расходы.\n"
+        "📊 Стройте отчёты по месяцам.\n"
+        "📤 Выгружайте данные в Excel.\n"
+        "📈 Устанавливайте лимиты на категории расходов — бот предупредит о превышении расхода.\n\n"
+        "Подробная информация — в кнопке «❓ Инструкция пользователя»."
+    )
+    send_message(chat_id, text, main_keyboard(chat_id))
+
+def handle_help(chat_id):
+    text1 = (
+        "📖 *Инструкция пользователя (часть 1/3)*\n\n"
+        "💰 *Финансовый помощник* помогает вести учёт доходов и расходов.\n\n"
+        "🔹 *Как записать доход:*\n"
+        "1. Нажмите «📝 Доход»\n"
+        "2. Выберите категорию (например, «💰 Зарплата»)\n"
+        "3. Введите сумму и описание\n"
+        "   *Пример:* 15000 зарплата\n\n"
+        "🔹 *Как записать расход:*\n"
+        "1. Нажмите «💸 Расход»\n"
+        "2. Выберите категорию (например, «🍔 Еда»)\n"
+        "3. Введите сумму и описание\n"
+        "   *Пример:* 500 обед\n\n"
+        "📌 *Если меню не появилось — просто отправьте «Старт» ещё раз.*"
+    )
+    send_message(chat_id, text1, main_keyboard(chat_id))
+    time.sleep(0.5)
+    
+    text2 = (
+        "📖 *Инструкция пользователя (часть 2/3)*\n\n"
+        "🔹 *Что такое бюджет?*\n"
+        "Это функция установки лимита расходов на категорию в месяц.\n"
+        "Нажмите «📈 Бюджет», выберите категорию — бот покажет текущий лимит (если он есть).\n"
+        "Вы можете установить новый лимит, изменить его или удалить.\n"
+        "Если превысите лимит — бот предупредит.\n\n"
+        "🔹 *Как посмотреть отчёт?*\n"
+        "Нажмите «📊 Отчёт» — бот покажет текущий месяц.\n"
+        "Нажмите «📅 Выбрать месяц» — можно посмотреть любой месяц."
+    )
+    send_message(chat_id, text2)
+    time.sleep(0.5)
+    
+    text3 = (
+        "📖 *Инструкция пользователя (часть 3/3)*\n\n"
+        "🔹 *Как посмотреть историю?*\n"
+        "Нажмите «📋 История» — бот покажет последние операции.\n"
+        "Листайте с помощью кнопок «🔙 Назад» и «➡️ Дальше».\n\n"
+        "🔹 *Как удалить все данные?*\n"
+        "Нажмите «🗑️ Сбросить всё» — бот запросит подтверждение.\n\n"
+        "🔹 *Как выгрузить данные в Excel?*\n"
+        "Нажмите «📤 Выгрузка в Excel» — бот пришлёт файл с таблицей.\n"
+        "В файле будут все ваши операции: дата, тип, категория, сумма и описание.\n"
+        "Внизу таблицы — итоги: общие доходы, расходы и доступный баланс.\n\n"
+        "⭐ *Донат:*\n"
+        "Вы можете оставить чаевые разработчику — кнопка «⭐ Донат» в меню.\n"
+        "💰 Приём донатов осуществляется через Telegram Stars.\n\n"
+        "💬 *Отзыв:*\n"
+        "Нажмите «💬 Отзыв» и напишите своё мнение о боте.\n"
+        "Это поможет сделать его лучше!"
+    )
+    send_message(chat_id, text3, main_keyboard(chat_id))
+
+def handle_stats(chat_id):
+    if chat_id != ADMIN_ID:
+        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
+        return
+    
+    stats = get_stats()
+    text = (
+        "📊 *Статистика бота*\n\n"
+        f"👥 Всего пользователей: {stats['total_users']}\n"
+        f"📆 Активных за 7 дней: {stats['active_users']}\n"
+        f"📆 Активных за 30 дней: {stats['active_users']}\n"
+        f"📝 Операций за месяц: {stats['total_ops']}\n"
+        f"💰 Доходы (всех пользователей): {format_amount(stats['total_income'])} р.\n"
+        f"📉 Расходы (всех пользователей): {format_amount(stats['total_expense'])} р."
+    )
+    send_message(chat_id, text, main_keyboard(chat_id))
+
+def handle_stats_donations(chat_id):
+    if chat_id != ADMIN_ID:
+        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
+        return
+    
+    total, count = get_total_donations()
+    text = (
+        "💰 *Статистика донатов*\n\n"
+        f"📦 Всего донатов: {count}\n"
+        f"⭐ Всего Stars: {total}"
+    )
+    send_message(chat_id, text, main_keyboard(chat_id))
+
+def handle_balance(chat_id):
+    balance, income, expense = get_balance(chat_id)
+    text = (
+        f"💰 *Ваш баланс: {format_amount(balance)} р.*\n\n"
+        f"↗️ Доходы: {format_amount(income)} р.\n"
+        f"↘️ Расходы: {format_amount(expense)} р."
+    )
+    send_message(chat_id, text, main_keyboard(chat_id))
+
+def handle_report_current(chat_id):
+    data = get_report_for_month(chat_id, datetime.now().year, datetime.now().month)
+    if not data:
+        months = get_available_months(chat_id)
+        if months:
+            text = "📊 За этот месяц операций нет.\n\n📅 Выберите другой месяц:"
+            send_message(chat_id, text, months_keyboard(months))
+            user_states[chat_id] = {"action": "choose_month"}
+        else:
+            send_message(chat_id, "📊 За этот месяц операций нет.", main_keyboard(chat_id))
+        return
+    
+    balance, income, expense = get_balance(chat_id)
+    text = f"📊 *Отчёт за {datetime.now().strftime('%B %Y')}*\n\n"
+    text += f"↗️ Доходы: {format_amount(income)} р.\n"
+    text += f"↘️ Расходы: {format_amount(expense)} р.\n"
+    text += f"💵 Свободно: {format_amount(balance)} р.\n\n"
+    
+    expense_cats = {}
+    for trans_type, category, amount in data:
+        if trans_type == "expense":
+            expense_cats[category] = expense_cats.get(category, 0) + amount
+    
+    if expense_cats:
+        text += "🔹 *Расходы по категориям:*\n"
+        for cat, amount in sorted(expense_cats.items(), key=lambda x: x[1], reverse=True):
+            budget = get_budget(chat_id, cat)
+            line = f"  • {cat}: {format_amount(amount)} р."
+            if budget:
+                line += f" (лимит: {format_amount(budget)} р.)"
+                if amount > budget:
+                    line += f" ⚠️ превышен!"
+            text += line + "\n"
+    else:
+        text += "🔹 Расходов нет\n"
+    
+    keyboard = main_keyboard(chat_id)
+    keyboard["keyboard"].append(["📅 Выбрать месяц"])
+    send_message(chat_id, text, keyboard)
+
+def handle_report_by_month(chat_id, year, month):
+    data = get_report_for_month(chat_id, year, month)
+    income, expense = get_monthly_income_expense(chat_id, year, month)
+    
+    if not data:
+        send_message(chat_id, f"📊 За {datetime(year, month, 1).strftime('%B %Y')} операций нет.", main_keyboard(chat_id))
+        return
+    
+    balance = income - expense
+    text = f"📊 *Отчёт за {datetime(year, month, 1).strftime('%B %Y')}*\n\n"
+    text += f"↗️ Доходы: {format_amount(income)} р.\n"
+    text += f"↘️ Расходы: {format_amount(expense)} р.\n"
+    text += f"💵 Свободно: {format_amount(balance)} р.\n\n"
+    
+    expense_cats = {}
+    for trans_type, category, amount in data:
+        if trans_type == "expense":
+            expense_cats[category] = expense_cats.get(category, 0) + amount
+    
+    if expense_cats:
+        text += "🔹 *Расходы по категориям:*\n"
+        for cat, amount in sorted(expense_cats.items(), key=lambda x: x[1], reverse=True):
+            budget = get_budget(chat_id, cat)
+            line = f"  • {cat}: {format_amount(amount)} р."
+            if budget:
+                line += f" (лимит: {format_amount(budget)} р.)"
+                if amount > budget:
+                    line += f" ⚠️ превышен!"
+            text += line + "\n"
+    else:
+        text += "🔹 Расходов нет\n"
+    
+    send_message(chat_id, text, main_keyboard(chat_id))
+
+def handle_history(chat_id, page=0):
+    total = get_total_transactions(chat_id)
+    if total == 0:
+        send_message(chat_id, "📋 История пуста.", main_keyboard(chat_id))
+        return
+    
+    per_page = 10
+    total_pages = (total + per_page - 1) // per_page
+    
+    if page >= total_pages:
+        page = total_pages - 1
+    
+    transactions = get_transactions_page(chat_id, page, per_page)
+    
+    text = f"📋 *История операций (стр. {page + 1}/{total_pages})*\n\n"
+    
+    for trans_type, category, amount, description, date in transactions:
+        emoji = "↗️" if trans_type == "income" else "↘️"
+        desc = f" ({description})" if description else ""
+        text += f"{emoji} {category}: {format_amount(amount)} р.{desc}\n"
+    
+    send_message(chat_id, text, history_keyboard(page, total_pages))
+    
+    user_states[chat_id] = {"action": "history", "page": page, "total_pages": total_pages}
+
+def handle_budget(chat_id):
+    cats = list(CATEGORIES["expense"].keys())
+    send_message(chat_id, "📈 *Выберите категорию для бюджета:*", two_column_keyboard(cats))
+
+def handle_choose_month(chat_id):
+    months = get_available_months(chat_id)
+    if not months:
+        send_message(chat_id, "📅 Нет данных для выбора месяца.", main_keyboard(chat_id))
+        return
+    
+    text = "📅 *Выберите месяц для отчёта:*"
+    send_message(chat_id, text, months_keyboard(months))
+    user_states[chat_id] = {"action": "choose_month"}
+
+def handle_donate(chat_id):
+    text = (
+        "⭐ *Оставить чаевые*\n\n"
+        "Если бот помогает вам вести учёт финансов — вы можете оставить чаевые разработчику.\n\n"
+        "💳 *Через Telegram Stars:*\n"
+        "Просто напишите сумму в Stars (например, 10, 25, 50 или любую другую).\n\n"
+        "💡 *Внимание:* сумма в платёжной форме отображается так:\n"
+        "• 10 Stars → ★ 1,000\n"
+        "• 25 Stars → ★ 2,500\n"
+        "• 50 Stars → ★ 5,000\n"
+        "• 100 Stars → ★ 10,000\n"
+    
+        "🌟 *Если покупка Stars через бота недоступна:*\n"
+        "Telegram → Настройки → «Звёзды» → Пополнить.\n\n"
+        "🙏 Любая сумма важна и приятна!\n"
+        "Спасибо, что делаете бота лучше ❤️"
+    )
+    send_message(chat_id, text, back_keyboard())
+    user_states[chat_id] = {"action": "donate_amount"}
+
+def handle_review(chat_id):
+    text = (
+        "💬 *Оставить отзыв*\n\n"
+        "Напишите ваше мнение о боте: что нравится, что можно улучшить, какие функции добавить.\n\n"
+        "Просто отправьте текст одним сообщением.\n\n"
+        "📌 Отзыв будет отправлен разработчику.\n"
+        "Спасибо за вашу обратную связь! 🙏"
+    )
+    send_message(chat_id, text, back_keyboard())
+    user_states[chat_id] = {"action": "review"}
+
 def process_text_command(chat_id, text):
     print(f"📥 Обработка команды: {text}")
-
+    
     if not get_user(chat_id):
         create_user(chat_id)
-
+    
     if text.startswith("Доход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -536,7 +785,7 @@ def process_text_command(chat_id, text):
             except Exception as e:
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
-
+    
     if text.startswith("Расход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -551,7 +800,7 @@ def process_text_command(chat_id, text):
             except Exception as e:
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
-
+    
     if text.startswith("Бюджет "):
         parts = text.split(" ", 2)
         if len(parts) >= 3:
@@ -563,7 +812,7 @@ def process_text_command(chat_id, text):
             except:
                 send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
         return
-
+    
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
@@ -584,7 +833,7 @@ def process_text_command(chat_id, text):
         send_message(REVIEW_GROUP_ID, notify_text)
         send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
         return
-
+    
     if text.startswith("⭐ Донат "):
         try:
             amount = int(text.split(" ")[2])
@@ -593,7 +842,7 @@ def process_text_command(chat_id, text):
         except:
             send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
         return
-
+    
     if text == "📊 Статистика" and chat_id == ADMIN_ID:
         stats = get_stats()
         text = (
@@ -606,7 +855,7 @@ def process_text_command(chat_id, text):
         )
         send_message(chat_id, text, main_keyboard(chat_id))
         return
-
+    
     if text == "/start":
         handle_start(chat_id)
         return
@@ -641,100 +890,8 @@ def process_text_command(chat_id, text):
         delete_all_data(chat_id)
         send_message(chat_id, "🗑️ Все данные удалены!", main_keyboard(chat_id))
         return
-
+    
     send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
-
-def handle_start(chat_id):
-    create_user(chat_id)
-    text = (
-        "💰 *Финансовый помощник*\n\n"
-        "📌 Записывайте доходы и расходы.\n"
-        "📊 Стройте отчёты по месяцам.\n"
-        "📤 Выгружайте данные в Excel.\n"
-        "📈 Устанавливайте лимиты на категории расходов.\n\n"
-        "Подробная информация — в кнопке «❓ Инструкция пользователя»."
-    )
-    send_message(chat_id, text, main_keyboard(chat_id))
-
-def handle_help(chat_id):
-    text = (
-        "📖 *Инструкция*\n\n"
-        "💰 Доход: выберите категорию → введите сумму\n"
-        "💸 Расход: выберите категорию → введите сумму\n"
-        "📈 Бюджет: установите лимит на категорию\n"
-        "📊 Отчёт: покажет доходы и расходы за месяц\n"
-        "📤 Excel: выгрузит все операции\n"
-        "⭐ Донат: поддержите разработчика\n"
-        "💬 Отзыв: напишите своё мнение\n"
-        "🗑️ Сброс: удалить все данные"
-    )
-    send_message(chat_id, text, main_keyboard(chat_id))
-
-def handle_balance(chat_id):
-    balance, income, expense = get_balance(chat_id)
-    text = (
-        f"💰 *Ваш баланс: {format_amount(balance)} р.*\n\n"
-        f"↗️ Доходы: {format_amount(income)} р.\n"
-        f"↘️ Расходы: {format_amount(expense)} р."
-    )
-    send_message(chat_id, text, main_keyboard(chat_id))
-
-def handle_report_current(chat_id):
-    data = get_report_for_month(chat_id, datetime.now().year, datetime.now().month)
-    if not data:
-        send_message(chat_id, "📊 За этот месяц операций нет.", main_keyboard(chat_id))
-        return
-    balance, income, expense = get_balance(chat_id)
-    text = f"📊 *Отчёт за {datetime.now().strftime('%B %Y')}*\n\n"
-    text += f"↗️ Доходы: {format_amount(income)} р.\n"
-    text += f"↘️ Расходы: {format_amount(expense)} р.\n"
-    text += f"💵 Свободно: {format_amount(balance)} р.\n\n"
-    expense_cats = {}
-    for trans_type, category, amount in data:
-        if trans_type == "expense":
-            expense_cats[category] = expense_cats.get(category, 0) + amount
-    if expense_cats:
-        text += "🔹 *Расходы по категориям:*\n"
-        for cat, amount in sorted(expense_cats.items(), key=lambda x: x[1], reverse=True):
-            budget = get_budget(chat_id, cat)
-            line = f"  • {cat}: {format_amount(amount)} р."
-            if budget:
-                line += f" (лимит: {format_amount(budget)} р.)"
-                if amount > budget:
-                    line += f" ⚠️ превышен!"
-            text += line + "\n"
-    else:
-        text += "🔹 Расходов нет\n"
-    send_message(chat_id, text, main_keyboard(chat_id))
-
-def handle_budget(chat_id):
-    cats = list(CATEGORIES["expense"].keys())
-    send_message(chat_id, "📈 *Выберите категорию для бюджета:*", two_column_keyboard(cats))
-
-def handle_donate(chat_id):
-    text = "⭐ *Оставить чаевые*\n\nНапишите сумму в Stars (например, 10, 25, 50)."
-    send_message(chat_id, text, back_keyboard())
-
-def handle_review(chat_id):
-    text = "💬 *Оставить отзыв*\n\nНапишите ваше мнение о боте одним сообщением."
-    send_message(chat_id, text, back_keyboard())
-
-def handle_history(chat_id, page=0):
-    total = get_total_transactions(chat_id)
-    if total == 0:
-        send_message(chat_id, "📋 История пуста.", main_keyboard(chat_id))
-        return
-    per_page = 10
-    total_pages = (total + per_page - 1) // per_page
-    if page >= total_pages:
-        page = total_pages - 1
-    transactions = get_transactions_page(chat_id, page, per_page)
-    text = f"📋 *История операций (стр. {page + 1}/{total_pages})*\n\n"
-    for trans_type, category, amount, description, date in transactions:
-        emoji = "↗️" if trans_type == "income" else "↘️"
-        desc = f" ({description})" if description else ""
-        text += f"{emoji} {category}: {format_amount(amount)} р.{desc}\n"
-    send_message(chat_id, text, history_keyboard(page, total_pages))
 
 def handle_reset(chat_id):
     send_message(
