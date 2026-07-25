@@ -1,4 +1,4 @@
-   import requests
+import requests
 import time
 import json
 import sqlite3
@@ -772,4 +772,4 @@ def handle_successful_payment(chat_id, payment_info):
 print("✅ Бот готов! Ожидаю Webhook-запросы...")
 print("=" * 50)
 
-threading.Event().wait()           
+threading.Event().wait()
