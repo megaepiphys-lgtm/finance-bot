@@ -36,6 +36,46 @@ def get_balance():
         "income": income,
         "expense": expense
     }
+    # ===== ИСТОРИЯ ДЛЯ ИНТЕРФЕЙСА =====
+@app.route('/history', methods=['GET'])
+def get_history():
+    chat_id = request.args.get('chat_id')
+    if not chat_id:
+        return {"error": "no chat_id"}, 400
+    chat_id = int(chat_id)
+    transactions = get_transactions_page(chat_id, 0, 50)
+    result = []
+    for t in transactions:
+        result.append({
+            "type": t[0],
+            "category": t[1],
+            "amount": t[2],
+            "description": t[3] or "",
+            "date": t[4]
+        })
+    return {"transactions": result}
+
+# ===== ОТЧЁТ ДЛЯ ИНТЕРФЕЙСА =====
+@app.route('/report', methods=['GET'])
+def get_report():
+    chat_id = request.args.get('chat_id')
+    if not chat_id:
+        return {"error": "no chat_id"}, 400
+    chat_id = int(chat_id)
+    year = datetime.now().year
+    month = datetime.now().month
+    data = get_report_for_month(chat_id, year, month)
+    balance, income, expense = get_balance(chat_id)
+    categories = []
+    for trans_type, category, amount in data:
+        if trans_type == "expense":
+            categories.append({"category": category, "amount": amount})
+    return {
+        "total_income": income,
+        "total_expense": expense,
+        "balance": balance,
+        "categories": categories
+    }
 
 # ===== WEBHOOK ДЛЯ MINI APP =====
 @app.route('/webhook', methods=['POST', 'OPTIONS'])
