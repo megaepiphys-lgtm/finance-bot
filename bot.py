@@ -24,6 +24,19 @@ def after_request(response):
 def home():
     return "Бот работает!"
 
+@app.route('/balance', methods=['GET'])
+def get_balance():
+    chat_id = request.args.get('chat_id')
+    if not chat_id:
+        return {"error": "no chat_id"}, 400
+    chat_id = int(chat_id)
+    balance, income, expense = get_balance(chat_id)
+    return {
+        "balance": balance,
+        "income": income,
+        "expense": expense
+    }
+
 # ===== WEBHOOK ДЛЯ MINI APP =====
 @app.route('/webhook', methods=['POST', 'OPTIONS'])
 def webhook():
