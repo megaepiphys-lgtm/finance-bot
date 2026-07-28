@@ -7,8 +7,9 @@ import re
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from flask import Flask, request
+from flask import Flask, request, send_file
 import threading
+import io
 
 app = Flask(__name__)
 
@@ -68,6 +69,15 @@ def get_budget_status():
         return {"error": "no category"}, 400
     limit = get_budget(chat_id, category)
     return {"limit": limit}
+
+@app.route('/export_excel', methods=['GET'])
+def export_excel():
+    chat_id = request.args.get('chat_id')
+    if not chat_id:
+        return {"error": "no chat_id"}, 400
+    chat_id = int(chat_id)
+    file_data = export_to_excel(chat_id)
+    return send_file(file_data, as_attachment=True, download_name=f"отчёт_{datetime.now().strftime('%B %Y')}.xlsx")
 
 @app.route('/webhook', methods=['POST', 'OPTIONS'])
 def webhook():
@@ -361,8 +371,7 @@ def export_to_excel(chat_id):
     data = c.fetchall()
     conn.close()
     if not data:
-        send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
-        return
+        return None
     wb = Workbook()
     default_sheet = wb.active
     wb.remove(default_sheet)
@@ -377,8 +386,7 @@ def export_to_excel(chat_id):
         except:
             continue
     if not months:
-        send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
-        return
+        return None
     for month_key, month_data in months.items():
         month_name = datetime.strptime(month_key, "%Y-%m").strftime("%B %Y")
         ws = wb.create_sheet(title=month_name)
@@ -430,12 +438,7 @@ def export_to_excel(chat_id):
             ws.column_dimensions[col_letter].width = max_length + 2
     filename = f"отчёт_{datetime.now().strftime('%B %Y')}.xlsx"
     wb.save(filename)
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
-    files = {'document': open(filename, 'rb')}
-    data = {'chat_id': chat_id}
-    requests.post(url, files=files, data=data)
-    os.remove(filename)
-    send_message(chat_id, "✅ Файл отправлен!", main_keyboard(chat_id))
+    return filename
 
 def get_stats():
     conn = sqlite3.connect(DB_PATH)
