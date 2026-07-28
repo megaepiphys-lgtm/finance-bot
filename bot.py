@@ -7,10 +7,9 @@ import re
 from datetime import datetime, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from flask import Flask, request  # <-- ДОБАВЛЕН request
+from flask import Flask, request
 import threading
 
-# ===== ЗАПУСК FLASK =====
 app = Flask(__name__)
 
 @app.after_request
@@ -31,12 +30,8 @@ def get_balance():
         return {"error": "no chat_id"}, 400
     chat_id = int(chat_id)
     balance, income, expense = get_balance(chat_id)
-    return {
-        "balance": balance,
-        "income": income,
-        "expense": expense
-    }
-    # ===== ИСТОРИЯ ДЛЯ ИНТЕРФЕЙСА =====
+    return {"balance": balance, "income": income, "expense": expense}
+
 @app.route('/history', methods=['GET'])
 def get_history():
     chat_id = request.args.get('chat_id')
@@ -46,38 +41,34 @@ def get_history():
     transactions = get_transactions_page(chat_id, 0, 50)
     result = []
     for t in transactions:
+        budget = get_budget(chat_id, t[1])
+        over_budget = False
+        if budget and t[0] == "expense":
+            spent = get_monthly_expense(chat_id, t[1])
+            if spent > budget:
+                over_budget = True
         result.append({
             "type": t[0],
             "category": t[1],
             "amount": t[2],
             "description": t[3] or "",
-            "date": t[4]
+            "date": t[4],
+            "over_budget": over_budget
         })
     return {"transactions": result}
 
-# ===== ОТЧЁТ ДЛЯ ИНТЕРФЕЙСА =====
-@app.route('/report', methods=['GET'])
-def get_report():
+@app.route('/budget_status', methods=['GET'])
+def get_budget_status():
     chat_id = request.args.get('chat_id')
     if not chat_id:
         return {"error": "no chat_id"}, 400
     chat_id = int(chat_id)
-    year = datetime.now().year
-    month = datetime.now().month
-    data = get_report_for_month(chat_id, year, month)
-    balance, income, expense = get_balance(chat_id)
-    categories = []
-    for trans_type, category, amount in data:
-        if trans_type == "expense":
-            categories.append({"category": category, "amount": amount})
-    return {
-        "total_income": income,
-        "total_expense": expense,
-        "balance": balance,
-        "categories": categories
-    }
+    category = request.args.get('category')
+    if not category:
+        return {"error": "no category"}, 400
+    limit = get_budget(chat_id, category)
+    return {"limit": limit}
 
-# ===== WEBHOOK ДЛЯ MINI APP =====
 @app.route('/webhook', methods=['POST', 'OPTIONS'])
 def webhook():
     if request.method == 'OPTIONS':
@@ -96,7 +87,6 @@ def run_flask():
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# ===== ТОКЕН И АДМИН =====
 TG_TOKEN = os.environ.get("TG_TOKEN")
 ADMIN_ID = 7461823442
 REVIEW_GROUP_ID = -1004397763875
@@ -107,7 +97,6 @@ if not TG_TOKEN:
 
 print("🚀 Запуск финансового помощника...")
 
-# ===== ПРОВЕРКА TELEGRAM =====
 url = f"https://api.telegram.org/bot{TG_TOKEN}/getMe"
 resp = requests.get(url)
 if not resp.json().get("ok"):
@@ -118,7 +107,6 @@ print("✅ Telegram подключён")
 requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/deleteWebhook")
 print("🔄 Webhook сброшен")
 
-# ===== БАЗА ДАННЫХ =====
 DB_PATH = "finance.db"
 
 def init_db():
@@ -157,10 +145,8 @@ def init_db():
 
 init_db()
 
-# ===== ПЕРЕМЕННАЯ ТЕХОБСЛУЖИВАНИЯ =====
 maintenance_mode = False
 
-# ===== КАТЕГОРИИ =====
 CATEGORIES = {
     "income": {
         "💰 Зарплата": "основная работа",
@@ -185,11 +171,9 @@ CATEGORIES = {
     }
 }
 
-# ===== ФУНКЦИЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ =====
 def format_amount(amount):
     return f"{amount:,.0f}".replace(",", " ")
 
-# ===== ФУНКЦИЯ ИЗВЛЕЧЕНИЯ ЧИСЛА ИЗ СТРОКИ =====
 def extract_amount_and_desc(text):
     match = re.search(r'([\d,\.]+)', text)
     if not match:
@@ -204,7 +188,6 @@ def extract_amount_and_desc(text):
         desc = desc[1:].strip()
     return amount, desc
 
-# ===== ФУНКЦИИ БАЗЫ =====
 def get_user(user_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -285,7 +268,6 @@ def get_report_for_month(user_id, year, month):
     next_month = month + 1 if month < 12 else 1
     next_year = year if month < 12 else year + 1
     month_end = f"{next_year}-{next_month:02d}-01"
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT type, category, SUM(amount) FROM transactions WHERE user_id = ? AND date >= ? AND date < ? GROUP BY type, category',
@@ -308,14 +290,12 @@ def get_monthly_income_expense(user_id, year, month):
     next_month = month + 1 if month < 12 else 1
     next_year = year if month < 12 else year + 1
     month_end = f"{next_year}-{next_month:02d}-01"
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT type, SUM(amount) FROM transactions WHERE user_id = ? AND date >= ? AND date < ? GROUP BY type',
               (user_id, month_start, month_end))
     result = c.fetchall()
     conn.close()
-    
     income = 0
     expense = 0
     for trans_type, amount in result:
@@ -374,22 +354,18 @@ def get_total_donations():
     conn.close()
     return total, count
 
-# ===== ВЫГРУЗКА В EXCEL =====
 def export_to_excel(chat_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT date, type, category, amount, description FROM transactions WHERE user_id = ? ORDER BY date DESC', (chat_id,))
     data = c.fetchall()
     conn.close()
-    
     if not data:
         send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
         return
-    
     wb = Workbook()
     default_sheet = wb.active
     wb.remove(default_sheet)
-    
     months = {}
     for row in data:
         try:
@@ -400,63 +376,51 @@ def export_to_excel(chat_id):
             months[month_key].append(row)
         except:
             continue
-    
     if not months:
         send_message(chat_id, "📋 Нет операций для выгрузки.", main_keyboard(chat_id))
         return
-    
     for month_key, month_data in months.items():
         month_name = datetime.strptime(month_key, "%Y-%m").strftime("%B %Y")
         ws = wb.create_sheet(title=month_name)
-        
         headers = ["Дата", "Тип", "Категория", "Сумма", "Описание"]
         for col_num, header in enumerate(headers, 1):
             ws.cell(row=1, column=col_num, value=header)
-        
         row_num = 2
         total_income = 0
         total_expense = 0
-        
         for row in month_data:
             try:
-                date_str = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S").strftime("%d.%m.%Y %H:%M")
+                date_obj = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S")
+                date_str = date_obj.strftime("%d.%m.%Y %H:%M")
             except:
                 date_str = row[0]
             trans_type = "Доход" if row[1] == "income" else "Расход"
             amount = row[3]
-            formatted_amount = f"{amount:,.0f} р.".replace(",", " ")
-            
+            formatted_amount = f"{amount:,.0f} р."
             ws.cell(row=row_num, column=1, value=date_str)
             ws.cell(row=row_num, column=2, value=trans_type)
             ws.cell(row=row_num, column=3, value=row[2])
             ws.cell(row=row_num, column=4, value=formatted_amount)
             ws.cell(row=row_num, column=5, value=row[4] or "")
-            
             if row[1] == "income":
                 total_income += amount
             else:
                 total_expense += amount
-            
             row_num += 1
-        
         bold_font = Font(bold=True)
         row_num += 1
-        
         ws.cell(row=row_num, column=3, value="ИТОГО ДОХОДЫ:")
-        ws.cell(row=row_num, column=4, value=f"{total_income:,.0f} р.".replace(",", " "))
+        ws.cell(row=row_num, column=4, value=f"{total_income:,.0f} р.")
         ws.cell(row=row_num, column=3).font = bold_font
-        
         row_num += 1
         ws.cell(row=row_num, column=3, value="ИТОГО РАСХОДЫ:")
-        ws.cell(row=row_num, column=4, value=f"{total_expense:,.0f} р.".replace(",", " "))
+        ws.cell(row=row_num, column=4, value=f"{total_expense:,.0f} р.")
         ws.cell(row=row_num, column=3).font = bold_font
-        
         row_num += 1
         balance = total_income - total_expense
         ws.cell(row=row_num, column=3, value="ДОСТУПНЫЙ БАЛАНС:")
-        ws.cell(row=row_num, column=4, value=f"{balance:,.0f} р.".replace(",", " "))
+        ws.cell(row=row_num, column=4, value=f"{balance:,.0f} р.")
         ws.cell(row=row_num, column=3).font = bold_font
-        
         for col in ws.columns:
             max_length = 0
             col_letter = col[0].column_letter
@@ -464,39 +428,30 @@ def export_to_excel(chat_id):
                 if cell.value:
                     max_length = max(max_length, len(str(cell.value)))
             ws.column_dimensions[col_letter].width = max_length + 2
-    
     filename = f"отчёт_{datetime.now().strftime('%B %Y')}.xlsx"
     wb.save(filename)
-    
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
     files = {'document': open(filename, 'rb')}
     data = {'chat_id': chat_id}
     requests.post(url, files=files, data=data)
-    
     os.remove(filename)
     send_message(chat_id, "✅ Файл отправлен!", main_keyboard(chat_id))
 
-# ===== СТАТИСТИКА =====
 def get_stats():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
     c.execute('SELECT COUNT(*) FROM users')
     total_users = c.fetchone()[0]
-    
     week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
     c.execute('SELECT COUNT(*) FROM users WHERE last_activity >= ?', (week_ago,))
     active_users = c.fetchone()[0]
-    
     month_start = datetime.now().replace(day=1).strftime("%Y-%m-%d")
     c.execute('SELECT COUNT(*) FROM transactions WHERE date >= ?', (month_start,))
     total_ops = c.fetchone()[0]
-    
     c.execute('SELECT SUM(amount) FROM transactions WHERE type = "income" AND date >= ?', (month_start,))
     total_income = c.fetchone()[0] or 0
     c.execute('SELECT SUM(amount) FROM transactions WHERE type = "expense" AND date >= ?', (month_start,))
     total_expense = c.fetchone()[0] or 0
-    
     conn.close()
     return {
         "total_users": total_users,
@@ -506,15 +461,13 @@ def get_stats():
         "total_expense": total_expense
     }
 
-# ===== КЛАВИАТУРЫ =====
 def main_keyboard(chat_id):
     keyboard = [
-        ["💰 Баланс", "📊 Отчёт"],
+        ["💰 Баланс", "📤 Отчёт / Выгрузка в Excel"],
         ["📝 Доход", "💸 Расход"],
         ["📈 Бюджет", "📋 История"],
-        ["📤 Выгрузка в Excel", "❓ Инструкция пользователя"],
-        ["⭐ Донат", "💬 Отзыв"],
-        ["🗑️ Сбросить всё"]
+        ["❓ Инструкция пользователя", "⭐ Донат"],
+        ["💬 Отзыв", "🗑️ Сбросить всё"]
     ]
     if chat_id == ADMIN_ID:
         keyboard.append(["📊 Статистика"])
@@ -584,7 +537,6 @@ def send_message(chat_id, text, keyboard=None):
     except Exception as e:
         print(f"⚠️ Ошибка отправки: {e}")
 
-# ===== ОБРАБОТЧИКИ =====
 def handle_start(chat_id):
     create_user(chat_id)
     text = (
@@ -638,7 +590,7 @@ def handle_help(chat_id):
         "🔹 *Как удалить все данные?*\n"
         "Нажмите «🗑️ Сбросить всё» — бот запросит подтверждение.\n\n"
         "🔹 *Как выгрузить данные в Excel?*\n"
-        "Нажмите «📤 Выгрузка в Excel» — бот пришлёт файл с таблицей.\n"
+        "Нажмите «📤 Отчёт / Выгрузка в Excel» — бот пришлёт файл с таблицей.\n"
         "В файле будут все ваши операции: дата, тип, категория, сумма и описание.\n"
         "Внизу таблицы — итоги: общие доходы, расходы и доступный баланс.\n\n"
         "⭐ *Донат:*\n"
@@ -654,7 +606,6 @@ def handle_stats(chat_id):
     if chat_id != ADMIN_ID:
         send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
         return
-    
     stats = get_stats()
     text = (
         "📊 *Статистика бота*\n\n"
@@ -671,7 +622,6 @@ def handle_stats_donations(chat_id):
     if chat_id != ADMIN_ID:
         send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
         return
-    
     total, count = get_total_donations()
     text = (
         "💰 *Статистика донатов*\n\n"
@@ -700,18 +650,15 @@ def handle_report_current(chat_id):
         else:
             send_message(chat_id, "📊 За этот месяц операций нет.", main_keyboard(chat_id))
         return
-    
     balance, income, expense = get_balance(chat_id)
     text = f"📊 *Отчёт за {datetime.now().strftime('%B %Y')}*\n\n"
     text += f"↗️ Доходы: {format_amount(income)} р.\n"
     text += f"↘️ Расходы: {format_amount(expense)} р.\n"
     text += f"💵 Свободно: {format_amount(balance)} р.\n\n"
-    
     expense_cats = {}
     for trans_type, category, amount in data:
         if trans_type == "expense":
             expense_cats[category] = expense_cats.get(category, 0) + amount
-    
     if expense_cats:
         text += "🔹 *Расходы по категориям:*\n"
         for cat, amount in sorted(expense_cats.items(), key=lambda x: x[1], reverse=True):
@@ -724,7 +671,6 @@ def handle_report_current(chat_id):
             text += line + "\n"
     else:
         text += "🔹 Расходов нет\n"
-    
     keyboard = main_keyboard(chat_id)
     keyboard["keyboard"].append(["📅 Выбрать месяц"])
     send_message(chat_id, text, keyboard)
@@ -732,22 +678,18 @@ def handle_report_current(chat_id):
 def handle_report_by_month(chat_id, year, month):
     data = get_report_for_month(chat_id, year, month)
     income, expense = get_monthly_income_expense(chat_id, year, month)
-    
     if not data:
         send_message(chat_id, f"📊 За {datetime(year, month, 1).strftime('%B %Y')} операций нет.", main_keyboard(chat_id))
         return
-    
     balance = income - expense
     text = f"📊 *Отчёт за {datetime(year, month, 1).strftime('%B %Y')}*\n\n"
     text += f"↗️ Доходы: {format_amount(income)} р.\n"
     text += f"↘️ Расходы: {format_amount(expense)} р.\n"
     text += f"💵 Свободно: {format_amount(balance)} р.\n\n"
-    
     expense_cats = {}
     for trans_type, category, amount in data:
         if trans_type == "expense":
             expense_cats[category] = expense_cats.get(category, 0) + amount
-    
     if expense_cats:
         text += "🔹 *Расходы по категориям:*\n"
         for cat, amount in sorted(expense_cats.items(), key=lambda x: x[1], reverse=True):
@@ -760,7 +702,6 @@ def handle_report_by_month(chat_id, year, month):
             text += line + "\n"
     else:
         text += "🔹 Расходов нет\n"
-    
     send_message(chat_id, text, main_keyboard(chat_id))
 
 def handle_history(chat_id, page=0):
@@ -768,24 +709,17 @@ def handle_history(chat_id, page=0):
     if total == 0:
         send_message(chat_id, "📋 История пуста.", main_keyboard(chat_id))
         return
-    
     per_page = 10
     total_pages = (total + per_page - 1) // per_page
-    
     if page >= total_pages:
         page = total_pages - 1
-    
     transactions = get_transactions_page(chat_id, page, per_page)
-    
     text = f"📋 *История операций (стр. {page + 1}/{total_pages})*\n\n"
-    
     for trans_type, category, amount, description, date in transactions:
         emoji = "↗️" if trans_type == "income" else "↘️"
         desc = f" ({description})" if description else ""
         text += f"{emoji} {category}: {format_amount(amount)} р.{desc}\n"
-    
     send_message(chat_id, text, history_keyboard(page, total_pages))
-    
     user_states[chat_id] = {"action": "history", "page": page, "total_pages": total_pages}
 
 def handle_budget(chat_id):
@@ -797,7 +731,6 @@ def handle_choose_month(chat_id):
     if not months:
         send_message(chat_id, "📅 Нет данных для выбора месяца.", main_keyboard(chat_id))
         return
-    
     text = "📅 *Выберите месяц для отчёта:*"
     send_message(chat_id, text, months_keyboard(months))
     user_states[chat_id] = {"action": "choose_month"}
@@ -813,7 +746,6 @@ def handle_donate(chat_id):
         "• 25 Stars → ★ 2,500\n"
         "• 50 Stars → ★ 5,000\n"
         "• 100 Stars → ★ 10,000\n"
-    
         "🌟 *Если покупка Stars через бота недоступна:*\n"
         "Telegram → Настройки → «Звёзды» → Пополнить.\n\n"
         "🙏 Любая сумма важна и приятна!\n"
@@ -833,65 +765,10 @@ def handle_review(chat_id):
     send_message(chat_id, text, back_keyboard())
     user_states[chat_id] = {"action": "review"}
 
-def handle_maintenance(chat_id, command):
-    global maintenance_mode
-    if chat_id != ADMIN_ID:
-        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
-        return
-    
-    if "on" in command:
-        maintenance_mode = True
-        send_message(chat_id, "🔧 *Режим технического обслуживания ВКЛЮЧЁН.*\n\nПользователи будут видеть уведомление о технических работах.", main_keyboard(chat_id))
-    elif "off" in command:
-        maintenance_mode = False
-        send_message(chat_id, "✅ *Режим технического обслуживания ВЫКЛЮЧЁН.*\n\nБот снова работает в обычном режиме.", main_keyboard(chat_id))
-    else:
-        status = "включён" if maintenance_mode else "выключен"
-        send_message(chat_id, f"🔧 Режим техобслуживания: *{status}*.", main_keyboard(chat_id))
-
-def handle_getid(chat_id):
-    send_message(chat_id, f"Chat ID: {chat_id}")
-
-# ===== БЭКАП И ВОССТАНОВЛЕНИЕ =====
-def handle_backup(chat_id):
-    if chat_id != ADMIN_ID:
-        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
-        return
-    
-    if not os.path.exists(DB_PATH):
-        send_message(chat_id, "📂 База данных не найдена.", main_keyboard(chat_id))
-        return
-    
-    try:
-        send_message(chat_id, "⏳ Создаю резервную копию...", main_keyboard(chat_id))
-        filename = f"backup_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.db"
-        os.rename(DB_PATH, filename)
-        
-        url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
-        files = {'document': open(filename, 'rb')}
-        data = {'chat_id': chat_id}
-        requests.post(url, files=files, data=data)
-        
-        os.rename(filename, DB_PATH)
-        send_message(chat_id, "✅ Бэкап создан и отправлен!", main_keyboard(chat_id))
-    except Exception as e:
-        send_message(chat_id, f"❌ Ошибка при создании бэкапа: {e}", main_keyboard(chat_id))
-
-def handle_restore(chat_id):
-    if chat_id != ADMIN_ID:
-        send_message(chat_id, "⛔ У вас нет доступа к этой команде.", main_keyboard(chat_id))
-        return
-    
-    send_message(chat_id, "📤 Отправьте файл с бэкапом (файл должен быть в формате .db)", back_keyboard())
-    user_states[chat_id] = {"action": "restore"}
-
 def process_text_command(chat_id, text):
     print(f"📥 Обработка команды: {text}")
-    
     if not get_user(chat_id):
         create_user(chat_id)
-    
-    # ===== ДОХОД =====
     if text.startswith("Доход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -906,8 +783,6 @@ def process_text_command(chat_id, text):
             except Exception as e:
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
-    
-    # ===== РАСХОД =====
     if text.startswith("Расход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -922,8 +797,6 @@ def process_text_command(chat_id, text):
             except Exception as e:
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
-    
-    # ===== БЮДЖЕТ =====
     if text.startswith("Бюджет "):
         parts = text.split(" ", 2)
         if len(parts) >= 3:
@@ -935,8 +808,6 @@ def process_text_command(chat_id, text):
             except:
                 send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
         return
-    
-    # ===== ОТЗЫВ =====
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
@@ -957,8 +828,6 @@ def process_text_command(chat_id, text):
         send_message(REVIEW_GROUP_ID, notify_text)
         send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
         return
-    
-    # ===== ДОНАТ =====
     if text.startswith("⭐ Донат "):
         try:
             amount = int(text.split(" ")[2])
@@ -967,8 +836,6 @@ def process_text_command(chat_id, text):
         except:
             send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
         return
-    
-    # ===== СТАТИСТИКА =====
     if text == "📊 Статистика" and chat_id == ADMIN_ID:
         stats = get_stats()
         text = (
@@ -981,8 +848,6 @@ def process_text_command(chat_id, text):
         )
         send_message(chat_id, text, main_keyboard(chat_id))
         return
-    
-    # ===== КОМАНДЫ ИЗ ЧАТА =====
     if text == "/start":
         handle_start(chat_id)
         return
@@ -998,7 +863,7 @@ def process_text_command(chat_id, text):
     if text == "📋 История":
         handle_history(chat_id, 0)
         return
-    if text == "📤 Выгрузка в Excel":
+    if text == "📤 Отчёт / Выгрузка в Excel" or text == "📤 Выгрузка в Excel":
         export_to_excel(chat_id)
         return
     if text == "⭐ Донат":
@@ -1017,7 +882,6 @@ def process_text_command(chat_id, text):
         delete_all_data(chat_id)
         send_message(chat_id, "🗑️ Все данные удалены!", main_keyboard(chat_id))
         return
-    
     send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
 
 def handle_reset(chat_id):
@@ -1071,93 +935,73 @@ print("=" * 50)
 offset = 0
 user_states = {}
 
-# ===== ОСНОВНОЙ ЦИКЛ БОТА =====
 while True:
     try:
         url = f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates?offset={offset}&timeout=30"
         resp = requests.get(url)
         updates = resp.json().get("result", [])
-
         for update in updates:
             if "message" in update:
                 msg = update["message"]
                 chat_id = msg["chat"]["id"]
                 text = msg.get("text", "").strip()
                 is_group = msg.get("chat", {}).get("type") in ["group", "supergroup"]
-
                 if not get_user(chat_id):
                     create_user(chat_id)
-
                 if maintenance_mode and chat_id != ADMIN_ID:
                     send_message(chat_id, "🔧 *Технические работы*\n\nБот временно недоступен. Ведутся улучшения.\nПожалуйста, зайдите через 10–15 минут.\n\nПриносим извинения за неудобства!", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
                 state = user_states.get(chat_id)
-
-                # ============================================================
-                # 1. ОБРАБОТКА КОМАНД
-                # ============================================================
                 if text == "/start":
                     user_states.pop(chat_id, None)
                     handle_start(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text.startswith("/maintenance"):
                     handle_maintenance(chat_id, text)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "/getid":
                     handle_getid(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "/stats_donations":
                     handle_stats_donations(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "/backup":
                     handle_backup(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "/restore":
                     handle_restore(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "/help" or text == "❓ Инструкция пользователя":
                     user_states.pop(chat_id, None)
                     handle_help(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "📊 Статистика":
                     handle_stats(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
-                if text == "📤 Выгрузка в Excel":
+                if text == "📤 Отчёт / Выгрузка в Excel" or text == "📤 Выгрузка в Excel":
                     user_states.pop(chat_id, None)
                     export_to_excel(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "⭐ Донат":
                     user_states.pop(chat_id, None)
                     handle_donate(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "💬 Отзыв":
                     user_states.pop(chat_id, None)
                     handle_review(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "🔙 Назад":
                     if state and state.get("action") == "history":
                         page = state.get("page", 0)
@@ -1171,7 +1015,6 @@ while True:
                         send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "➡️ Дальше":
                     if state and state.get("action") == "history":
                         page = state.get("page", 0) + 1
@@ -1184,61 +1027,50 @@ while True:
                         send_message(chat_id, "Используйте кнопки меню 👇", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "🔙 Главное меню":
                     user_states.pop(chat_id, None)
                     send_message(chat_id, "🔙 Главное меню", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "💰 Баланс":
                     user_states.pop(chat_id, None)
                     handle_balance(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "📊 Отчёт":
                     user_states.pop(chat_id, None)
                     handle_report_current(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "📋 История":
                     user_states.pop(chat_id, None)
                     handle_history(chat_id, 0)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "📝 Доход":
                     user_states[chat_id] = {"action": "income_select"}
                     send_message(chat_id, "📝 *Выберите категорию доходов, либо нажмите 🔙 для выхода в главное меню*", category_keyboard("income"))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "💸 Расход":
                     user_states[chat_id] = {"action": "expense_select"}
                     send_message(chat_id, "💸 *Выберите категорию расходов, либо нажмите 🔙 для выхода в главное меню*", category_keyboard("expense"))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "📈 Бюджет":
                     user_states[chat_id] = {"action": "budget_select"}
                     handle_budget(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "🗑️ Сбросить всё":
                     user_states[chat_id] = {"action": "confirm_delete"}
                     send_message(
                         chat_id,
-                        "⚠️ *ВНИМАНИЕ!*\n\nВы действительно хотите удалить ВСЕ свои данные?\n"
-                        "(доходы, расходы, бюджеты)\n\n"
-                        "Это действие НЕЛЬЗЯ отменить!",
+                        "⚠️ *ВНИМАНИЕ!*\n\nВы действительно хотите удалить ВСЕ свои данные?\n(доходы, расходы, бюджеты)\n\nЭто действие НЕЛЬЗЯ отменить!",
                         confirm_delete_keyboard()
                     )
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "✅ Да, удалить всё":
                     if state and state.get("action") == "confirm_delete":
                         delete_all_data(chat_id)
@@ -1248,7 +1080,6 @@ while True:
                         send_message(chat_id, "Используйте кнопки меню 👇", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "❌ Нет, отмена":
                     if state and state.get("action") == "confirm_delete":
                         user_states.pop(chat_id, None)
@@ -1257,16 +1088,11 @@ while True:
                         send_message(chat_id, "Используйте кнопки меню 👇", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
                 if text == "📅 Выбрать месяц":
                     user_states.pop(chat_id, None)
                     handle_choose_month(chat_id)
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 2. ВЫБОР КАТЕГОРИИ ДОХОДА
-                # ============================================================
                 if state and state.get("action") == "income_select":
                     if text in CATEGORIES["income"]:
                         state["category"] = text
@@ -1280,10 +1106,6 @@ while True:
                         send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму👇.", category_keyboard("income"))
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 3. ВВОД СУММЫ ДОХОДА
-                # ============================================================
                 if state and state.get("action") == "income_amount":
                     amount, description = extract_amount_and_desc(text)
                     if amount is not None:
@@ -1296,10 +1118,6 @@ while True:
                         send_message(chat_id, f"❌ Введите число и описание.\nНапример: *15000 {example}*", back_keyboard())
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 4. ВЫБОР КАТЕГОРИИ РАСХОДА
-                # ============================================================
                 if state and state.get("action") == "expense_select":
                     if text in CATEGORIES["expense"]:
                         state["category"] = text
@@ -1313,10 +1131,6 @@ while True:
                         send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму👇.", category_keyboard("expense"))
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 5. ВВОД СУММЫ РАСХОДА
-                # ============================================================
                 if state and state.get("action") == "expense_amount":
                     amount, description = extract_amount_and_desc(text)
                     if amount is not None:
@@ -1341,10 +1155,6 @@ while True:
                         send_message(chat_id, f"❌ Введите число и описание.\nНапример: *500 {example}*", back_keyboard())
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 6. ВЫБОР КАТЕГОРИИ ДЛЯ БЮДЖЕТА
-                # ============================================================
                 if state and state.get("action") == "budget_select":
                     if text in CATEGORIES["expense"]:
                         state["category"] = text
@@ -1372,10 +1182,6 @@ while True:
                         send_message(chat_id, "❌ Выберите категорию из списка, а затем введите сумму👇.", two_column_keyboard(list(CATEGORIES["expense"].keys())))
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 7. ВВОД БЮДЖЕТА
-                # ============================================================
                 if state and state.get("action") == "budget_amount":
                     if text == "🗑️ Удалить лимит":
                         delete_budget(chat_id, state["category"])
@@ -1394,10 +1200,6 @@ while True:
                             send_message(chat_id, "❌ Введите число!", back_keyboard())
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 8. ВЫБОР МЕСЯЦА
-                # ============================================================
                 if state and state.get("action") == "choose_month":
                     if text.startswith("📆 "):
                         month_str = text.replace("📆 ", "")
@@ -1413,10 +1215,6 @@ while True:
                         send_message(chat_id, "❌ Выберите месяц из списка.", main_keyboard(chat_id))
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 9. ДОНАТЫ
-                # ============================================================
                 if state and state.get("action") == "donate_amount":
                     try:
                         amount = int(text)
@@ -1433,36 +1231,24 @@ while True:
                         send_message(chat_id, "❌ Введите целое число (например, 10, 25, 50).", back_keyboard())
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 10. ВОССТАНОВЛЕНИЕ БД (RESTORE)
-                # ============================================================
                 if state and state.get("action") == "restore":
                     if "document" in msg:
                         file_id = msg["document"]["file_id"]
                         file_name = msg["document"].get("file_name", "")
-                        
                         if not file_name.endswith(".db"):
                             send_message(chat_id, "❌ Неверный формат файла. Отправьте файл с расширением .db", back_keyboard())
                             user_states.pop(chat_id, None)
                             offset = update["update_id"] + 1
                             continue
-                        
                         try:
                             send_message(chat_id, "⏳ Восстанавливаю базу данных...", back_keyboard())
-                            
-                            # Получаем файл
                             file_info_url = f"https://api.telegram.org/bot{TG_TOKEN}/getFile"
                             file_info = requests.get(file_info_url, params={"file_id": file_id}).json()
                             file_path = file_info["result"]["file_path"]
                             file_url = f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}"
-                            
-                            # Скачиваем файл
                             response = requests.get(file_url)
                             with open(DB_PATH, "wb") as f:
                                 f.write(response.content)
-                            
-                            # Проверяем, что база корректна
                             try:
                                 conn = sqlite3.connect(DB_PATH)
                                 conn.execute("SELECT 1 FROM users LIMIT 1")
@@ -1473,13 +1259,9 @@ while True:
                                 user_states.pop(chat_id, None)
                                 offset = update["update_id"] + 1
                                 continue
-                            
                             send_message(chat_id, "✅ База данных восстановлена!", main_keyboard(chat_id))
                             user_states.pop(chat_id, None)
-                            
-                            # Перезапускаем бота (вызовем init_db, чтобы убедиться, что структура правильная)
                             init_db()
-                            
                         except Exception as e:
                             send_message(chat_id, f"❌ Ошибка восстановления: {e}", main_keyboard(chat_id))
                             user_states.pop(chat_id, None)
@@ -1487,15 +1269,10 @@ while True:
                         send_message(chat_id, "❌ Отправьте файл с расширением .db", back_keyboard())
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 11. ОТЗЫВЫ
-                # ============================================================
                 if state and state.get("action") == "review":
                     user_name = msg.get("from", {}).get("first_name", "Пользователь")
                     username = msg.get("from", {}).get("username", "")
                     user_link = f"@{username}" if username else f"[{user_name}](tg://user?id={chat_id})"
-                    
                     review_text = (
                         f"💬 *Новый отзыв*\n\n"
                         f"👤 От: {user_link}\n"
@@ -1506,35 +1283,20 @@ while True:
                     user_states.pop(chat_id, None)
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 12. ПЛАТЕЖИ
-                # ============================================================
                 if "successful_payment" in msg:
                     payment_info = msg["successful_payment"]
                     handle_successful_payment(chat_id, payment_info)
                     offset = update["update_id"] + 1
                     continue
-
-                # ============================================================
-                # 13. НЕИЗВЕСТНАЯ КОМАНДА
-                # ============================================================
                 if is_group:
                     offset = update["update_id"] + 1
                     continue
-
                 send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
                 offset = update["update_id"] + 1
-
-        # ============================================================
-        # 14. PRE-CHECKOUT
-        # ============================================================
         if "pre_checkout_query" in update:
             handle_pre_checkout_query(update["pre_checkout_query"])
             offset = update["update_id"] + 1
-
         time.sleep(2)
-
     except Exception as e:
         print(f"⚠️ Ошибка: {e}")
         time.sleep(5)
