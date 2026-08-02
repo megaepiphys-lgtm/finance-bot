@@ -801,20 +801,20 @@ def process_text_command(chat_id, text):
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
     if text.startswith("Бюджет "):
-        print(f"📥 [ОТЛАДКА] Текст команды: {text}")
-        parts = text.split(" ", 2)
-        print(f"📥 [ОТЛАДКА] parts: {parts}")
-        if len(parts) >= 3:
-            try:
-                category = parts[1]
-                amount = float(parts[2])
-                print(f"📥 [ОТЛАДКА] Категория: {category}, Сумма: {amount}")
-                set_budget(chat_id, category, amount)
-                send_message(chat_id, f"✅ Бюджет для {category}: {format_amount(amount)} р.", main_keyboard(chat_id))
-            except Exception as e:
-                print(f"❌ Ошибка бюджета: {e}")
-                send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
-        return
+    print(f"📥 [ОТЛАДКА] Текст команды: {text}")
+    parts = text.split(" ", 2)
+    print(f"📥 [ОТЛАДКА] parts: {parts}")
+    if len(parts) >= 3:
+        try:
+            category = parts[1]
+            amount = float(parts[2])
+            print(f"📥 [ОТЛАДКА] Категория: {category}, Сумма: {amount}")
+            set_budget(chat_id, category, amount)
+            send_message(chat_id, f"✅ Бюджет для {category}: {format_amount(amount)} р.", main_keyboard(chat_id))
+        except Exception as e:
+            print(f"❌ Ошибка бюджета: {e}")
+            send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
+    return
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
