@@ -1352,12 +1352,6 @@ while True:
                 send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
                 offset = update["update_id"] + 1
 
-        # ===== PRE-CHECKOUT =====
-for upd in updates:
-    if "pre_checkout_query" in upd:
-        handle_pre_checkout_query(upd["pre_checkout_query"])
-        offset = upd["update_id"] + 1
-
         time.sleep(2)
 
     except Exception as e:
