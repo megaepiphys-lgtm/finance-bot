@@ -815,7 +815,7 @@ def process_text_command(chat_id, text):
         except Exception as e:
             print(f"❌ Ошибка бюджета: {e}")
             send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
-    return   
+    return
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
