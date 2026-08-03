@@ -81,6 +81,7 @@ def export_excel():
 
 @app.route('/webhook', methods=['POST', 'OPTIONS'])
 def webhook():
+    print("🔥 /webhook вызван", flush=True)
     if request.method == 'OPTIONS':
         return '', 200
     data = request.get_json()
