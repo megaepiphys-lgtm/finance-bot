@@ -1353,7 +1353,6 @@ while True:
                 offset = update["update_id"] + 1
 
         # ===== PRE-CHECKOUT =====
-        # ===== PRE-CHECKOUT =====
 for upd in updates:
     if "pre_checkout_query" in upd:
         handle_pre_checkout_query(upd["pre_checkout_query"])
