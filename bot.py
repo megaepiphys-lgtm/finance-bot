@@ -772,6 +772,7 @@ def process_text_command(chat_id, text):
     print(f"📥 Обработка команды: {text}")
     if not get_user(chat_id):
         create_user(chat_id)
+    
     if text.startswith("Доход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -786,6 +787,7 @@ def process_text_command(chat_id, text):
             except Exception as e:
                 send_message(chat_id, f"❌ Ошибка: {e}", main_keyboard(chat_id))
         return
+    
     if text.startswith("Расход "):
         parts = text.split(" ", 2)
         if len(parts) >= 2:
@@ -802,20 +804,21 @@ def process_text_command(chat_id, text):
         return
     
     if text.startswith("Бюджет "):
-    print(f"📥 [ОТЛАДКА] Текст команды: {text}")
-    parts = text.split(" ", 2)
-    print(f"📥 [ОТЛАДКА] parts: {parts}")
-    if len(parts) >= 3:
-        try:
-            category = parts[1]
-            amount = float(parts[2])
-            print(f"📥 [ОТЛАДКА] Категория: {category}, Сумма: {amount}")
-            set_budget(chat_id, category, amount)
-            send_message(chat_id, f"✅ Бюджет для {category}: {format_amount(amount)} р.", main_keyboard(chat_id))
-        except Exception as e:
-            print(f"❌ Ошибка бюджета: {e}")
-            send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
-    return
+        print(f"📥 [ОТЛАДКА] Текст команды: {text}")
+        parts = text.split(" ", 2)
+        print(f"📥 [ОТЛАДКА] parts: {parts}")
+        if len(parts) >= 3:
+            try:
+                category = parts[1]
+                amount = float(parts[2])
+                print(f"📥 [ОТЛАДКА] Категория: {category}, Сумма: {amount}")
+                set_budget(chat_id, category, amount)
+                send_message(chat_id, f"✅ Бюджет для {category}: {format_amount(amount)} р.", main_keyboard(chat_id))
+            except Exception as e:
+                print(f"❌ Ошибка бюджета: {e}")
+                send_message(chat_id, "❌ Ошибка бюджета. Используйте: Бюджет Еда 10000", main_keyboard(chat_id))
+        return
+    
     if text.startswith("Отзыв: "):
         review_text = text[7:]
         user_name = "Пользователь"
@@ -836,6 +839,7 @@ def process_text_command(chat_id, text):
         send_message(REVIEW_GROUP_ID, notify_text)
         send_message(chat_id, "✅ Спасибо за отзыв! 🙏", main_keyboard(chat_id))
         return
+    
     if text.startswith("⭐ Донат "):
         try:
             amount = int(text.split(" ")[2])
@@ -844,6 +848,7 @@ def process_text_command(chat_id, text):
         except:
             send_message(chat_id, "❌ Ошибка доната. Используйте: ⭐ Донат 25", main_keyboard(chat_id))
         return
+    
     if text == "📊 Статистика" and chat_id == ADMIN_ID:
         stats = get_stats()
         text = (
@@ -856,6 +861,7 @@ def process_text_command(chat_id, text):
         )
         send_message(chat_id, text, main_keyboard(chat_id))
         return
+    
     if text == "/start":
         handle_start(chat_id)
         return
@@ -890,6 +896,7 @@ def process_text_command(chat_id, text):
         delete_all_data(chat_id)
         send_message(chat_id, "🗑️ Все данные удалены!", main_keyboard(chat_id))
         return
+    
     send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
 
 def handle_reset(chat_id):
