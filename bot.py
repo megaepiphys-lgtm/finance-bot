@@ -1303,17 +1303,20 @@ while True:
                     handle_successful_payment(chat_id, payment_info)
                     offset = update["update_id"] + 1
                     continue
-                if is_group:
-                    offset = update["update_id"] + 1
-                    continue
-                send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
-                offset = update["update_id"] + 1
-        # ===== PRE-CHECKOUT =====
-for update in updates:
+                    if is_group:
+        offset = update["update_id"] + 1
+        continue
+
+    send_message(chat_id, "❌ Используйте кнопки меню 👇", main_keyboard(chat_id))
+    offset = update["update_id"] + 1
+
+    # ===== PRE-CHECKOUT =====
     if "pre_checkout_query" in update:
         handle_pre_checkout_query(update["pre_checkout_query"])
         offset = update["update_id"] + 1
-        time.sleep(2)
-    except Exception as e:
-        print(f"⚠️ Ошибка: {e}")
-        time.sleep(5)
+
+    time.sleep(2)
+
+except Exception as e:
+    print(f"⚠️ Ошибка: {e}")
+    time.sleep(5)
