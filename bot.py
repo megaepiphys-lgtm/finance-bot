@@ -84,6 +84,7 @@ def webhook():
     if request.method == 'OPTIONS':
         return '', 200
     data = request.get_json()
+    print("✅ WEBHOOK ВЫЗВАН")  # <-- НОВАЯ СТРОКА
     print(f"📥 Входящие данные: {data}")
     if data and "chat_id" in data and "text" in data:
         chat_id = data["chat_id"]
@@ -91,7 +92,6 @@ def webhook():
         print(f"📥 Команда из Mini App: {text}")
         process_text_command(chat_id, text)
     return {"status": "ok"}, 200
-
 def run_flask():
     app.run(host='0.0.0.0', port=10000)
 
